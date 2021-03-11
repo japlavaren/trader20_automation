@@ -1,0 +1,4 @@
+python-binance
+python-dotenv
+discord.py
+python-binance
