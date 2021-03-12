@@ -1,0 +1,13 @@
+binance_api:
+  key: BINANCE_API_KEY
+  secret: BINANCE_API_SECRET
+
+discord:
+  channel: 759070661888704613
+  token: DISCORD_TOKEN
+
+email:
+  recipient: YOUR_EMAIL
+  host: EMAIL_HOST
+  user: EMAIL_USER
+  password: EMAIL_PASSWORD

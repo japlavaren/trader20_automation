@@ -1,4 +1,4 @@
-python-binance
-python-dotenv
 discord.py
+mypy
 python-binance
+pyyaml
