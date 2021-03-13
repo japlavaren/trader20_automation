@@ -10,6 +10,15 @@
 - `virtualenv venv && source venv/bin/activate && pip install -r requirements.txt`
 - `cp config.yaml.example config.yaml` and fill in variables
 
-# Run
+## Run
 
 `python run_bomberman_coins.py 100` 100 is amount per each transaction
+
+I strongly recommend running command within [supervisor](http://supervisord.org/running.html), which restarts command
+when error occurs.
+
+## Donate
+
+I made this project for myself, but if it is solving your problem consider donation:
+- Revolut `jakub20w6`
+- IBAN `LT973250098278175568`
