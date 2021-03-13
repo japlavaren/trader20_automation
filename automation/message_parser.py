@@ -2,28 +2,31 @@ import re
 from decimal import Decimal
 from typing import List, Optional, Tuple
 
+from unidecode import unidecode
+
 
 class BuyMessage:
     BUY_MARKET = 'market'
     BUY_LIMIT = 'limit'
 
     def __init__(self, content: str, symbol: str, buy_type: str, buy_price: Optional[Decimal], targets: List[Decimal],
-                 stop_loss: Optional[Decimal]) -> None:
+                 stop_loss: Decimal) -> None:
         self.content: str = content
         self.symbol: str = symbol
         self.buy_type: str = buy_type
         self.buy_price: Optional[Decimal] = buy_price
         self.targets: List[Decimal] = targets
-        self.stop_loss: Optional[Decimal] = stop_loss
+        self.stop_loss: Decimal = stop_loss
 
 
 class UnknownMessage(Exception):
     pass
 
+
 class MessageParser:
     @classmethod
-    def parse(cls, msg: str) -> BuyMessage:
-        msg = cls._normalize(msg)
+    def parse(cls, original_msg: str) -> BuyMessage:
+        msg = cls._normalize(original_msg)
         buy_type, buy_price = cls._parse_buy(msg)
 
         return BuyMessage(
@@ -37,7 +40,7 @@ class MessageParser:
 
     @classmethod
     def _parse_symbol(cls, msg: str) -> str:
-        match = re.search(r'\d{2}\.\d{2}\.\d{2} ([\da-z]+/(?:usdt?|btc))', msg)
+        match = re.search(r'([\da-z]+/(?:usdt?|btc))', msg)
         assert match is not None
         symbol = match.group(1).replace('/', '').upper()
 
@@ -48,12 +51,10 @@ class MessageParser:
 
     @classmethod
     def _parse_buy(cls, msg: str) -> Tuple[str, Optional[Decimal]]:
-        market_match = re.search(r'vstup:.*market', msg)
-
-        if market_match is not None:
+        if 'vstup:' in msg:
             return BuyMessage.BUY_MARKET, None
 
-        limit_match = re.search(r'limitný (?:vstup|príkaz): (\d+(?:\.\d*)?)', msg)
+        limit_match = re.search(r'limitny (?:vstup|prikaz): (\d+(?:\.\d*)?)', msg)
 
         if limit_match is not None:
             return BuyMessage.BUY_LIMIT, Decimal(limit_match.group(1))
@@ -68,10 +69,7 @@ class MessageParser:
         return targets
 
     @classmethod
-    def _parse_stop_loss(cls, msg: str) -> Optional[Decimal]:
-        if 'stop' not in msg:
-            return None
-
+    def _parse_stop_loss(cls, msg: str) -> Decimal:
         match = re.search(r'stop ?loss: (\d+(?:\.\d*)?)', msg)
         assert match is not None
 
@@ -79,7 +77,8 @@ class MessageParser:
 
     @staticmethod
     def _normalize(msg: str) -> str:
+        msg = unidecode(msg).lower()
         msg = re.sub(r'\s*:\s*', ': ', msg)
         msg = re.sub(r'\s*/\s*', '/', msg)
 
-        return msg.lower()
+        return msg

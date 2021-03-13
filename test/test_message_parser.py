@@ -10,12 +10,19 @@ if __name__ == '__main__':
     @dc.event
     async def on_ready() -> None:
         channel = dc.get_channel(config['discord']['channel'])
+        messages = [message.content async for message in channel.history()]
 
-        async for message in channel.history():
+        for message in messages:
+            # ignore this message
+            if '12.01.21 WRX/USDT' in message:
+                continue
+
             try:
-                MessageParser.parse(message.content)
+                MessageParser.parse(message)
             except UnknownMessage:
-                print(message.content + '\n')
+                print(message + '\n')
+
+        await dc.close()
 
 
     dc.run(config['discord']['token'], bot=False)

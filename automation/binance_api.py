@@ -25,8 +25,8 @@ class BinanceApi:
         quantity = round(amount / price, quantity_precision)
         self._client.order_limit_buy(symbol=symbol, price=price, quantity=quantity)
 
-    def oco_sell(self, symbol: str, targets: List[Decimal], total_quantity: Decimal,
-                 stop_loss: Optional[Decimal]) -> List[Dict[str, Any]]:
+    def oco_sell(self, symbol: str, targets: List[Decimal], total_quantity: Decimal, stop_loss: Decimal,
+                 ) -> List[Dict[str, Any]]:
         # split total quantity to equal parts per each trade
         quantity_precision, price_precision = self._get_precisions(symbol)
         trade_quantity = round(total_quantity / len(targets), quantity_precision)
@@ -35,13 +35,9 @@ class BinanceApi:
         all_params = []
 
         for price, quantity in zip(targets, quantities):
-            params = dict(symbol=symbol, quantity=quantity, price=price)
-
-            if stop_loss is not None:
-                params['stopPrice'] = round(stop_loss * (1 + self.STOP_PRICE_CORRECTION), price_precision)
-                params['stopLimitPrice'] = stop_loss
-                params['stopLimitTimeInForce'] = 'FOK'
-
+            stop_price = round(stop_loss * (1 + self.STOP_PRICE_CORRECTION), price_precision)
+            params = dict(symbol=symbol, quantity=quantity, price=price, stopPrice=stop_price, stopLimitPrice=stop_loss,
+                          stopLimitTimeInForce='FOK')
             self._client.order_oco_sell(**params)
             all_params.append(params)
 
