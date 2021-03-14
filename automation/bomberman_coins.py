@@ -51,9 +51,15 @@ class BombermanCoins:
         self._logger.log(subject, message.content + '\n\n' + subject)
 
     def _process_market_sell(self, message: SellMessage) -> None:
-        order_id, quantity = self._api.get_oco_order(message.symbol)
-        self._api.cancel_order(message.symbol, order_id)
-        sell_price = self._api.market_sell(message.symbol, quantity)
+        orders = self._api.get_oco_orders(message.symbol)
+        assert len(orders) != 0, 'None OCO sell orders found'
+        total_quantity = Decimal(0)
 
-        subject = f'{message.symbol} market sold qty {quantity:.3f}, price {sell_price:.3f}'
+        for order_id, quantity in orders:
+            self._api.cancel_order(message.symbol, order_id)
+            total_quantity += quantity
+
+        sell_price = self._api.market_sell(message.symbol, total_quantity)
+
+        subject = f'{message.symbol} market sold qty {total_quantity:.3f}, price {sell_price:.3f}'
         self._logger.log(subject, message.content + '\n\n' + subject)

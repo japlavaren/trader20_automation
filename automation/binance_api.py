@@ -62,22 +62,20 @@ class BinanceApi:
 
         return all_params
 
-    def get_oco_order(self, symbol: str) -> Tuple[int, Decimal]:
-        orders = self._client.get_open_orders(symbol=symbol)
-        sorted(orders, key=lambda o: o['type'])
+    def get_oco_orders(self, symbol: str) -> List[Tuple[int, Decimal]]:
+        all_orders = self._client.get_open_orders(symbol=symbol)
+        sorted(all_orders, key=lambda o: o['type'])
+        grouped_orders = {}
+        oco_orders = []
 
-        if len(orders) == 0:
-            raise AssertionError('None OCO sell order found')
-        elif len(orders) > 2:
-            raise AssertionError('More than one OCO sell order found')
+        for order in all_orders:
+            grouped_orders.setdefault(order['orderListId'], []).append(order)
 
-        assert (orders[0]['orderListId'] == orders[1]['orderListId']
-                and orders[0]['type'] == 'STOP_LOSS_LIMIT'
-                and orders[1]['type'] == 'LIMIT_MAKER'), 'Not OCO sell order'
-        order_id = orders[0]['orderId']
-        quantity = Decimal(orders[0]['origQty'])
+        for orders in grouped_orders.values():
+            if len(orders) == 2 and orders[0]['type'] == 'STOP_LOSS_LIMIT' and orders[1]['type'] == 'LIMIT_MAKER':
+                oco_orders.append((orders[0]['orderId'], Decimal(orders[0]['origQty'])))
 
-        return order_id, quantity
+        return oco_orders
 
     def cancel_order(self, symbol: str, order_id: int) -> None:
         info = self._client.cancel_order(symbol=symbol, orderId=order_id)
