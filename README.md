@@ -5,6 +5,12 @@
 - This project is for my personal needs. You are free to use it on your own responsibility.
 - API calls used in this project are against Discord terms and can cause disabling your Discord account.
 
+## Known problems
+
+- Market sell order message will **cancel all** existing OCO orders and **sell total amount for market price**. It does
+  not understand selling just first target and keeping second. This is non-standard situation that happened just few
+  times in history and it is not easy to handle to automatically because message format is not standardized.
+
 ## Setup
 
 - `virtualenv venv && source venv/bin/activate && pip install -r requirements.txt`
