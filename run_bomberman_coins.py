@@ -9,7 +9,7 @@ from automation.binance_api import BinanceApi
 from automation.bomberman_coins import BombermanCoins
 from automation.config import config
 from automation.logger import Logger
-from automation.message_parser import UnknownMessage
+from automation.parser.message_parser import UnknownMessage
 
 if __name__ == '__main__':
     parser = ArgumentParser()
@@ -30,7 +30,8 @@ if __name__ == '__main__':
     async def on_message(message: DiscordMessage) -> None:
         try:
             if message.channel.id == config['discord']['channel']:
-                bomberman_coins.process(message.content)
+                parent_content = message.reference.resolved.content if message.reference is not None else None
+                bomberman_coins.process(message.content, parent_content)
         except UnknownMessage:
             logger.log('Bomberman coins UNKNOWN MESSAGE', message.content)
         except:

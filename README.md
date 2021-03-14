@@ -19,6 +19,4 @@ when error occurs.
 
 ## Donate
 
-I made this project for myself, but if it is solving your problem consider donation:
-- Revolut `jakub20w6`
-- IBAN `LT973250098278175568`
+I made this project for myself, but if it is solving your problem [consider donation](https://revolut.me/jakub20w6)
