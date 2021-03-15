@@ -30,7 +30,11 @@ if __name__ == '__main__':
     async def on_message(message: DiscordMessage) -> None:
         try:
             if message.channel.id == config['discord']['channel']:
-                parent_content = message.reference.resolved.content if message.reference is not None else None
+                parent_content = None
+
+                if message.reference is not None and message.reference.resolved is not None:
+                    parent_content = message.reference.resolved.content
+
                 bomberman_coins.process(message.content, parent_content)
         except UnknownMessage:
             logger.log('Bomberman coins UNKNOWN MESSAGE', message.content)
