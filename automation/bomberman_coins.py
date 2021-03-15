@@ -5,18 +5,23 @@ from automation.binance_api import BinanceApi
 from automation.logger import Logger
 from automation.parser.message_parser import BuyMessage, MessageParser, UnknownMessage
 from automation.parser.sell_message_parser import SellMessage
+from binance.exceptions import BinanceAPIException
+
 
 
 class BombermanCoins:
-    def __init__(self, trade_amount: Decimal, api: BinanceApi, logger: Logger) -> None:
+    def __init__(self, trade_amount: Decimal, api: BinanceApi, logger: Logger, config) -> None:
         self._trade_amount: Decimal = trade_amount
         self._api: BinanceApi = api
         self._logger: Logger = logger
+        self._config = config
 
     def process(self, content: str, parent_content: Optional[str]) -> None:
         message = MessageParser.parse(content, parent_content)
 
         if isinstance(message, BuyMessage):
+            if self._config["app"]["market-type"] == "FUTURES":
+                self._process_futures_buy(message)
             if message.buy_type == BuyMessage.BUY_MARKET:
                 self._process_market_buy(message)
                 return
@@ -63,3 +68,48 @@ class BombermanCoins:
 
         subject = f'{message.symbol} market sold qty {total_quantity:.3f}, price {sell_price:.3f}'
         self._logger.log(subject, message.content + '\n\n' + subject)
+
+    def _process_futures_buy(self, message: BuyMessage):
+        try:
+            if message.buy_type == BuyMessage.BUY_MARKET:
+                self._api.market_futures_buy(
+                    message.symbol,
+                    self._trade_amount,
+                    self._config["app"]["leverage"],
+                    self._config["app"]["margin-type"],
+                    message.targets,
+                    message.stop_loss
+                )
+                msg = f'{message.symbol} market futures buy created, price {message.buy_price:.3f},' \
+                      f' TP {str(message.targets)}, SL {message.stop_loss }'
+                self._logger.log(msg, message.content + '\n\n' + msg)
+
+                return
+
+            if message.buy_type == BuyMessage.BUY_LIMIT:
+                self._api.limit_futures_buy(
+                    message.symbol,
+                    message.buy_price,
+                    self._trade_amount,
+                    self._config["app"]["leverage"],
+                    self._config["app"]["margin-type"],
+                    message.targets,
+                    message.stop_loss
+                )
+                msg = f'{message.symbol} market futures buy created, price {message.buy_price:.3f},' \
+                      f' TP {str(message.targets)}, SL {message.stop_loss}'
+                self._logger.log(msg, message.content + '\n\n' + msg)
+
+                return
+
+        except BinanceAPIException as e:
+            if e.code != -1121:
+                raise
+            if message.buy_type == BuyMessage.BUY_MARKET:
+                self._process_market_buy(message)
+            elif message.buy_type == BuyMessage.BUY_LIMIT:
+                self._process_limit_buy(message)
+            else:
+                raise UnknownMessage()
+        except:
+            raise
