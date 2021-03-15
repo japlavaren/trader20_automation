@@ -13,6 +13,7 @@
 
 ## Setup
 
+- You need to  python 3.8 and higher for this project. 
 - `virtualenv venv && source venv/bin/activate && pip install -r requirements.txt`
 - `cp config.yaml.example config.yaml` and fill in variables
 
