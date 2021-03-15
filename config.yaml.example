@@ -6,7 +6,14 @@ discord:
   channel: 759070661888704613
   token: DISCORD_TOKEN
 
+app:
+  trade-amount: 100
+  market-type: FUTURES
+  margin-type: ISOLATED
+  leverage: 10
+
 email:
+  enable: no
   recipient: YOUR_EMAIL
   host: EMAIL_HOST
   user: EMAIL_USER

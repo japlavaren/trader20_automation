@@ -1,9 +1,11 @@
 import math
+import time
 from decimal import Decimal
 from functools import lru_cache
 from typing import Any, Dict, List, Tuple
 
 from binance.client import Client
+from binance.exceptions import BinanceAPIException
 
 
 class BinanceApi:
@@ -40,6 +42,121 @@ class BinanceApi:
         quantity_rounded = round(amount / price, precision['quantity'])
         info = self._client.order_limit_buy(symbol=symbol, price=price_rounded, quantity=quantity_rounded)
         assert info['status'] in ('FILLED', 'NEW'), f'Got {info["status"]} status'
+
+    def market_futures_buy(self, symbol: str, amount: Decimal, leverage: str,
+                           margin_type: str, targets: List[Decimal], sl: Decimal):
+        assert 'USDT' in symbol, 'Only USDT pairs are suported'
+
+        try:
+            self._client.futures_change_margin_type(symbol=symbol, marginType=margin_type)
+        except BinanceAPIException as e:
+            if e.code != -4046:
+                raise
+
+        self._client.futures_change_leverage(symbol=symbol, leverage=leverage)
+        ex_info = self._get_futures_exinfo(symbol)
+        if not ex_info:
+            raise ValueError("Symbol not available on Futures")
+
+        price = float(self._get_symbol_price(symbol))
+        quantity = round(amount / price, ex_info["quantityPrecision"])
+
+        self._client.futures_create_order(
+            side="BUY",
+            symbol=symbol,
+            type="MARKET",
+            quantity=quantity,
+            timestamp=int(time.time() * 1000)
+        )
+
+        # TP SL
+        quantity_precision = ex_info["quantityPrecision"]
+        price_precision = ex_info["pricePrecision"]
+        tp_quantity = round(quantity / len(targets), quantity_precision)
+        sl_price = round(sl, price_precision)
+        '''
+        for t in targets:
+            self._client.futures_create_order(
+                side="SELL",
+                symbol=symbol,
+                type="TAKE_PROFIT",
+                quantity=tp_quantity,
+                price=round(t, price_precision),
+                stopPrice=sl_price,
+                timeInForce="GTC",
+            )
+        '''
+        for t in targets:
+            self._client.futures_create_order(
+                side="SELL",
+                symbol=symbol,
+                type="TAKE_PROFIT_MARKET",
+                quantity=tp_quantity,
+                stopPrice=round(t, price_precision),
+                timeInForce="GTC",
+            )
+
+        # SL
+        self._client.futures_create_order(
+            side="SELL",
+            symbol=symbol,
+            type="STOP_MARKET",
+            quantity=quantity,
+            stopPrice=round(sl_price, price_precision),
+            timeInForce="GTC",
+        )
+
+    def limit_futures_buy(self, symbol: str, price: Decimal, amount: Decimal,
+                          leverage: str, margin_type: str, targets: List[Decimal], sl: Decimal):
+        assert 'USDT' in symbol, 'Only USDT pairs are suported'
+
+        try:
+            self._client.futures_change_margin_type(symbol=symbol, marginType=margin_type)
+        except BinanceAPIException as e:
+            if e.code != -4046:
+                raise
+
+        self._client.futures_change_leverage(symbol=symbol, leverage=leverage)
+        ex_info = self._get_futures_exinfo(symbol)
+        if not ex_info:
+            raise ValueError("Symbol not available on Futures")
+
+        quantity = round(amount / price, ex_info["quantityPrecision"])
+
+        self._client.futures_create_order(
+            side="BUY",
+            symbol=symbol,
+            type="LIMIT",
+            price=price,
+            quantity=quantity,
+            timeInForce="GTC",
+            timestamp=int(time.time() * 1000)
+        )
+
+        # TP SL
+        quantity_precision = ex_info["quantityPrecision"]
+        price_precision = ex_info["pricePrecision"]
+        tp_quantity = round(quantity / len(targets), quantity_precision)
+        sl_price = round(sl, price_precision)
+
+        for t in targets:
+            self._client.futures_create_order(
+                side="SELL",
+                symbol=symbol,
+                type="TAKE_PROFIT_MARKET",
+                quantity=tp_quantity,
+                stopPrice=round(t, price_precision),
+                timeInForce="GTC",
+            )
+        # SL
+        self._client.futures_create_order(
+            side="SELL",
+            symbol=symbol,
+            type="STOP_MARKET",
+            quantity=quantity,
+            stopPrice=round(sl_price, price_precision),
+            timeInForce="GTC",
+        )
 
     def oco_sell(self, symbol: str, targets: List[Decimal], total_quantity: Decimal, stop_loss: Decimal,
                  ) -> List[Dict[str, Any]]:
@@ -80,6 +197,19 @@ class BinanceApi:
     def cancel_order(self, symbol: str, order_id: int) -> None:
         info = self._client.cancel_order(symbol=symbol, orderId=order_id)
         assert info['listStatusType'] == 'ALL_DONE'
+
+    def _get_futures_exinfo(self, symbol):
+        exinfo = self._client.futures_exchange_info()
+        symbol_info = None
+        for i in exinfo["symbols"]:
+            if i["symbol"] == symbol:
+                symbol_info = i
+                break
+
+        return symbol_info
+
+    def _get_symbol_price(self, symbol):
+        return self._client.get_symbol_ticker(symbol=symbol)["price"]
 
     @lru_cache
     def _get_precisions(self, symbol: str) -> Dict[str, int]:
