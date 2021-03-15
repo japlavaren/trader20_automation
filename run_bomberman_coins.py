@@ -10,7 +10,6 @@ from mypy.applytype import Optional
 
 from automation.binance_api import BinanceApi
 from automation.bomberman_coins import BombermanCoins
-from automation.config import config
 from automation.logger import Logger
 from automation.parser.message_parser import UnknownMessage
 
