@@ -1,9 +1,10 @@
 from discord import Client
 
-from automation.config import config
+from automation.functions import load_config
 from automation.parser.message_parser import MessageParser, UnknownMessage
 
 if __name__ == '__main__':
+    config = load_config()
     dc = Client()
 
 

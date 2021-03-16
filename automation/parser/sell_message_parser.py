@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Tuple
 
 from automation.parser.common import normalize, parse_symbol, UnknownMessage
 
@@ -6,9 +6,10 @@ from automation.parser.common import normalize, parse_symbol, UnknownMessage
 class SellMessage:
     SELL_MARKET = 'market'
 
-    def __init__(self, content: str, symbol: str, sell_type: str) -> None:
+    def __init__(self, content: str, symbol: str, currency: str, sell_type: str) -> None:
         self.content: str = content
         self.symbol: str = symbol
+        self.currency: str = currency
         self.sell_type: str = sell_type
 
 
@@ -18,10 +19,12 @@ class SellMessageParser:
         normalized = normalize(content)
         parent_normalized = normalize(parent_content) if parent_content is not None else None
         cls._check_is_sell(normalized)
+        symbol, currency = cls._parse_symbol(normalized, parent_normalized)
 
         return SellMessage(
             content=content,
-            symbol=cls._parse_symbol(normalized, parent_normalized),
+            symbol=symbol,
+            currency=currency,
             sell_type=SellMessage.SELL_MARKET,
         )
 
@@ -38,7 +41,7 @@ class SellMessageParser:
         raise UnknownMessage()
 
     @staticmethod
-    def _parse_symbol(normalized: str, parent_normalized: Optional[str]) -> str:
+    def _parse_symbol(normalized: str, parent_normalized: Optional[str]) -> Tuple[str, str]:
         try:
             return parse_symbol(normalized)
         except AssertionError:
