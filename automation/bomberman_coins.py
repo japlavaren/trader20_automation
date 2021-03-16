@@ -44,8 +44,8 @@ class BombermanCoins:
         self._logger.log_message(message.content, [
             f'Spot market bought {message.symbol}',
             f'price: {price:.3f}',
-            'TP: ' + ', '.join(f'{tp:,3f}' for tp in message.targets),
-            f'SL: {message.stop_loss:,3f}',
+            'TP: ' + ', '.join(f'{tp:.3f}' for tp in message.targets),
+            f'SL: {message.stop_loss:.3f}',
         ])
 
     def _spot_limit_buy(self, message: BuyMessage, amount: Decimal) -> None:

@@ -22,10 +22,11 @@ class BinanceApi:
             quoteOrderQty=self._round(amount, precision.price),
         )
         assert info['status'] == 'FILLED', f'Got {info["status"]} status'
-        quantity = Decimal(info['executedQty'])
-        price = Decimal(info['cummulativeQuoteQty']) / quantity
+        bought_quantity = self._parse_decimal(info['executedQty'])
+        bought_amount = self._parse_decimal(info['cummulativeQuoteQty'])
+        buy_price = self._round(bought_amount / bought_quantity, precision.price)
 
-        return quantity, price
+        return bought_quantity, buy_price
 
     def market_sell(self, symbol: str, quantity: Decimal) -> Decimal:
         precision = self._get_precision(symbol)
@@ -34,10 +35,11 @@ class BinanceApi:
             quantity=self._round(quantity, precision.quantity),
         )
         assert info['status'] == 'FILLED', f'Got {info["status"]} status'
-        total_price = Decimal(info['cummulativeQuoteQty'])
-        price = total_price / Decimal(info['executedQty'])
+        sold_amount = self._parse_decimal(info['cummulativeQuoteQty'])
+        sold_quantity = self._parse_decimal(info['executedQty'])
+        sell_price = self._round(sold_amount / sold_quantity, precision.price)
 
-        return price
+        return sell_price
 
     def limit_buy(self, symbol: str, price: Decimal, amount: Decimal) -> None:
         quantity = amount / price
@@ -76,7 +78,9 @@ class BinanceApi:
 
         for orders in grouped_orders.values():
             if len(orders) == 2 and orders[0]['type'] == 'STOP_LOSS_LIMIT' and orders[1]['type'] == 'LIMIT_MAKER':
-                oco_orders.append((orders[0]['orderId'], Decimal(orders[0]['origQty'])))
+                order_id = orders[0]['orderId']
+                quantity = self._parse_decimal(orders[0]['origQty'])
+                oco_orders.append((order_id, quantity))
 
         return oco_orders
 
@@ -117,4 +121,11 @@ class BinanceApi:
     def _round(num: Decimal, precision: int) -> Decimal:
         assert isinstance(num, Decimal)
 
-        return Decimal(round(num, precision))
+        return round(num, precision)
+
+    @staticmethod
+    def _parse_decimal(value: str) -> Decimal:
+        if '.' in value:
+            value = value.rstrip('0')
+            
+        return Decimal(value)

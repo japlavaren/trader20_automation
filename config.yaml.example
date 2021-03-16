@@ -1,6 +1,8 @@
 app:
+  market_type: SPOT  # SPOT / FUTURES
+
   spot:
-    trade-amount:
+    trade_amount:
       USDT: 100
       BTC: 0.002
 
