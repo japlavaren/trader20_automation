@@ -16,7 +16,6 @@ class BinanceApi:
         self.__precisions: Dict[str, Precision] = {}
 
     def market_buy(self, symbol: str, amount: Decimal) -> Tuple[Decimal, Decimal]:
-        assert 'USDT' in symbol, 'Only USDT pairs are suported'
         precision = self._get_precision(symbol)
         info = self._client.order_market_buy(
             symbol=symbol,
@@ -41,7 +40,6 @@ class BinanceApi:
         return price
 
     def limit_buy(self, symbol: str, price: Decimal, amount: Decimal) -> None:
-        assert 'USDT' in symbol, 'Only USDT pairs are suported'
         quantity = amount / price
         precision = self._get_precision(symbol)
         info = self._client.order_limit_buy(
