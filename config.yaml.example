@@ -1,3 +1,9 @@
+app:
+  spot:
+    trade-amount:
+      USDT: 100
+      BTC: 0.002
+
 binance_api:
   key: BINANCE_API_KEY
   secret: BINANCE_API_SECRET

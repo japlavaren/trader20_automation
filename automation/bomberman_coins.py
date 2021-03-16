@@ -1,5 +1,5 @@
 from decimal import Decimal
-from typing import Optional
+from typing import Dict, Optional
 
 from automation.binance_api import BinanceApi
 from automation.logger import Logger
@@ -8,8 +8,8 @@ from automation.parser.sell_message_parser import SellMessage
 
 
 class BombermanCoins:
-    def __init__(self, trade_amount: Decimal, api: BinanceApi, logger: Logger) -> None:
-        self._trade_amount: Decimal = trade_amount
+    def __init__(self, spot_trade_amounts: Dict[str, Decimal], api: BinanceApi, logger: Logger) -> None:
+        self._spot_trade_amounts: Dict[str, Decimal] = spot_trade_amounts
         self._api: BinanceApi = api
         self._logger: Logger = logger
 
@@ -17,40 +17,52 @@ class BombermanCoins:
         message = MessageParser.parse(content, parent_content)
 
         if isinstance(message, BuyMessage):
-            if message.buy_type == BuyMessage.BUY_MARKET:
-                self._process_market_buy(message)
-                return
-            elif message.buy_type == BuyMessage.BUY_LIMIT:
-                self._process_limit_buy(message)
-                return
+            return self._spot_buy(message)
         elif isinstance(message, SellMessage):
-            if message.sell_type == SellMessage.SELL_MARKET:
-                self._process_market_sell(message)
-                return
+            return self._spot_sell(message)
 
         raise UnknownMessage()
 
-    def _process_market_buy(self, message: BuyMessage) -> None:
-        quantity, buy_price = self._api.market_buy(message.symbol, self._trade_amount)
-        all_params = self._api.oco_sell(message.symbol, message.targets, quantity, message.stop_loss)
+    def _spot_buy(self, message: BuyMessage) -> None:
+        amount = self._spot_trade_amounts.get(message.currency, Decimal(0))
 
-        subject = f'{message.symbol} market bought qty {quantity:.3f}, price {buy_price:.3f}'
-        msg = '\n'.join(', '.join(part for part in [
-            f'OCO sell order price {params["price"]:.2f}',
-            f'stop {params["stopPrice"]:.2f}' if 'stopPrice' in params else None,
-            f'limit {params["stopLimitPrice"]:.2f}' if 'stopLimitPrice' in params else None,
-        ] if part is not None) for params in all_params)
+        if amount == Decimal(0):
+            msg = f'SKIPPING spot {message.symbol}'
+            self._logger.log(msg, message.content)
+            return
 
-        self._logger.log(subject, message.content + '\n\n' + subject + '\n' + msg)
+        if message.buy_type == BuyMessage.BUY_MARKET:
+            return self._spot_market_buy(message, amount)
+        elif message.buy_type == BuyMessage.BUY_LIMIT:
+            return self._spot_limit_buy(message, amount)
 
-    def _process_limit_buy(self, message: BuyMessage) -> None:
+        raise UnknownMessage()
+
+    def _spot_market_buy(self, message: BuyMessage, amount: Decimal) -> None:
+        quantity, price = self._api.market_buy(message.symbol, amount)
+        self._api.oco_sell(message.symbol, message.targets, quantity, message.stop_loss)
+        self._logger.log_message(message.content, [
+            f'Spot market bought {message.symbol}',
+            f'price: {price:.3f}',
+            'TP: ' + ', '.join(f'{tp:,3f}' for tp in message.targets),
+            f'SL: {message.stop_loss:,3f}',
+        ])
+
+    def _spot_limit_buy(self, message: BuyMessage, amount: Decimal) -> None:
         assert message.buy_price is not None
-        self._api.limit_buy(message.symbol, message.buy_price, self._trade_amount)
+        self._api.limit_buy(message.symbol, message.buy_price, amount)
+        self._logger.log_message(message.content, [
+            f'Spot limit buy order {message.symbol}',
+            f'price: {message.buy_price:.3f}',
+        ])
 
-        subject = f'{message.symbol} limit buy created, price {message.buy_price:.3f}'
-        self._logger.log(subject, message.content + '\n\n' + subject)
+    def _spot_sell(self, message: SellMessage) -> None:
+        if message.sell_type == SellMessage.SELL_MARKET:
+            return self._spot_market_sell(message)
 
-    def _process_market_sell(self, message: SellMessage) -> None:
+        raise UnknownMessage()
+
+    def _spot_market_sell(self, message: SellMessage) -> None:
         orders = self._api.get_oco_orders(message.symbol)
         assert len(orders) != 0, 'None OCO sell orders found'
         total_quantity = Decimal(0)
@@ -59,7 +71,8 @@ class BombermanCoins:
             self._api.cancel_order(message.symbol, order_id)
             total_quantity += quantity
 
-        sell_price = self._api.market_sell(message.symbol, total_quantity)
-
-        subject = f'{message.symbol} market sold qty {total_quantity:.3f}, price {sell_price:.3f}'
-        self._logger.log(subject, message.content + '\n\n' + subject)
+        price = self._api.market_sell(message.symbol, total_quantity)
+        self._logger.log_message(message.content, [
+            f'Spot market sold {message.symbol}',
+            f'price: {price:.3f}',
+        ])

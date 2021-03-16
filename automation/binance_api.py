@@ -1,9 +1,11 @@
 import math
+from collections import namedtuple
 from decimal import Decimal
-from functools import lru_cache
 from typing import Any, Dict, List, Tuple
 
 from binance.client import Client
+
+Precision = namedtuple('Precision', 'quantity, price')
 
 
 class BinanceApi:
@@ -11,12 +13,15 @@ class BinanceApi:
 
     def __init__(self, client: Client) -> None:
         self._client: Client = client
+        self.__precisions: Dict[str, Precision] = {}
 
     def market_buy(self, symbol: str, amount: Decimal) -> Tuple[Decimal, Decimal]:
         assert 'USDT' in symbol, 'Only USDT pairs are suported'
-        precision = self._get_precisions(symbol)
-        amount_rounded = round(amount, precision['price'])
-        info = self._client.order_market_buy(symbol=symbol, quoteOrderQty=amount_rounded)
+        precision = self._get_precision(symbol)
+        info = self._client.order_market_buy(
+            symbol=symbol,
+            quoteOrderQty=self._round(amount, precision.price),
+        )
         assert info['status'] == 'FILLED', f'Got {info["status"]} status'
         quantity = Decimal(info['executedQty'])
         price = Decimal(info['cummulativeQuoteQty']) / quantity
@@ -24,9 +29,11 @@ class BinanceApi:
         return quantity, price
 
     def market_sell(self, symbol: str, quantity: Decimal) -> Decimal:
-        precision = self._get_precisions(symbol)
-        quantity_rounded = round(quantity, precision['quantity'])
-        info = self._client.order_market_sell(symbol=symbol, quantity=quantity_rounded)
+        precision = self._get_precision(symbol)
+        info = self._client.order_market_sell(
+            symbol=symbol,
+            quantity=self._round(quantity, precision.quantity),
+        )
         assert info['status'] == 'FILLED', f'Got {info["status"]} status'
         total_price = Decimal(info['cummulativeQuoteQty'])
         price = total_price / Decimal(info['executedQty'])
@@ -35,37 +42,35 @@ class BinanceApi:
 
     def limit_buy(self, symbol: str, price: Decimal, amount: Decimal) -> None:
         assert 'USDT' in symbol, 'Only USDT pairs are suported'
-        precision = self._get_precisions(symbol)
-        price_rounded = round(price, precision['price'])
-        quantity_rounded = round(amount / price, precision['quantity'])
-        info = self._client.order_limit_buy(symbol=symbol, price=price_rounded, quantity=quantity_rounded)
+        quantity = amount / price
+        precision = self._get_precision(symbol)
+        info = self._client.order_limit_buy(
+            symbol=symbol,
+            price=self._round(price, precision.price),
+            quantity=self._round(quantity, precision.quantity),
+        )
         assert info['status'] in ('FILLED', 'NEW'), f'Got {info["status"]} status'
 
-    def oco_sell(self, symbol: str, targets: List[Decimal], total_quantity: Decimal, stop_loss: Decimal,
-                 ) -> List[Dict[str, Any]]:
-        # split total quantity to equal parts per each trade
-        precision = self._get_precisions(symbol)
-        trade_quantity = round(total_quantity / len(targets), precision['quantity'])
-        quantities = [trade_quantity for _ in range(len(targets))]
-        quantities[-1] = round(total_quantity - sum(quantities[:-1]), precision['quantity'])
-        stop_loss_rounded = round(stop_loss, precision['price'])
-        all_params = []
+    def oco_sell(self, symbol: str, targets: List[Decimal], total_quantity: Decimal, stop_loss: Decimal) -> None:
+        precision = self._get_precision(symbol)
+        quantities = self._get_target_quantities(total_quantity, len(targets), precision)
+        stop_price = stop_loss * (1 + self.STOP_PRICE_CORRECTION)
 
         for price, quantity in zip(targets, quantities):
-            price_rounded = round(price, precision['price'])
-            stop_price_rounded = round(stop_loss * (1 + self.STOP_PRICE_CORRECTION), precision['price'])
-            params = dict(symbol=symbol, quantity=quantity, price=price_rounded, stopPrice=stop_price_rounded,
-                          stopLimitPrice=stop_loss_rounded, stopLimitTimeInForce='FOK')
-            info = self._client.order_oco_sell(**params)
+            info = self._client.order_oco_sell(
+                symbol=symbol,
+                quantity=quantity,
+                price=self._round(price, precision.price),
+                stopPrice=self._round(stop_price, precision.price),
+                stopLimitPrice=self._round(stop_loss, precision.price),
+                stopLimitTimeInForce='FOK',
+            )
             assert info['listStatusType'] == 'EXEC_STARTED'
-            all_params.append(params)
-
-        return all_params
 
     def get_oco_orders(self, symbol: str) -> List[Tuple[int, Decimal]]:
         all_orders = self._client.get_open_orders(symbol=symbol)
         sorted(all_orders, key=lambda o: o['type'])
-        grouped_orders = {}
+        grouped_orders: Dict[int, List[Dict[str, Any]]] = {}
         oco_orders = []
 
         for order in all_orders:
@@ -81,21 +86,37 @@ class BinanceApi:
         info = self._client.cancel_order(symbol=symbol, orderId=order_id)
         assert info['listStatusType'] == 'ALL_DONE'
 
-    @lru_cache
-    def _get_precisions(self, symbol: str) -> Dict[str, int]:
-        info = self._client.get_symbol_info(symbol)
-        precision = {}
+    def _get_precision(self, symbol: str) -> Precision:
+        if symbol not in self.__precisions:
+            info = self._client.get_symbol_info(symbol)
+            quantity, price = None, None
 
-        def parse(key: str) -> int:
-            return int(round(-math.log(Decimal(f[key]), 10), 0))
+            def parse(key: str) -> int:
+                return int(round(-math.log(Decimal(f[key]), 10), 0))
 
-        for f in info['filters']:
-            if f['filterType'] == 'LOT_SIZE':
-                precision['quantity'] = parse('stepSize')
-            elif f['filterType'] == 'PRICE_FILTER':
-                precision['price'] = parse('tickSize')
+            for f in info['filters']:
+                if f['filterType'] == 'LOT_SIZE':
+                    quantity = parse('stepSize')
+                elif f['filterType'] == 'PRICE_FILTER':
+                    price = parse('tickSize')
 
-        assert precision['quantity'] is not None, 'Unknown quantity precission'
-        assert precision['price'] is not None, 'Unknown price precission'
+            assert quantity is not None, 'Unknown quantity precision'
+            assert price is not None, 'Unknown price precision'
+            self.__precisions[symbol] = Precision(quantity, price)
 
-        return precision
+        return self.__precisions[symbol]
+
+    @classmethod
+    def _get_target_quantities(cls, total_quantity: Decimal, targets_count: int, precision: Precision) -> List[Decimal]:
+        assert targets_count != 0
+        trade_quantity = cls._round(total_quantity / targets_count, precision.quantity)
+        quantities = [trade_quantity for _ in range(targets_count)]
+        quantities[-1] = total_quantity - sum(quantities[:-1])
+
+        return quantities
+
+    @staticmethod
+    def _round(num: Decimal, precision: int) -> Decimal:
+        assert isinstance(num, Decimal)
+
+        return Decimal(round(num, precision))
