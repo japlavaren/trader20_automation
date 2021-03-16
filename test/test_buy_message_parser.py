@@ -5,7 +5,7 @@ from automation.parser.buy_message_parser import BuyMessage, BuyMessageParser
 
 
 class TestBuyMessageParser(TestCase):
-    def test_vstup(self):
+    def test_vstup_limit(self):
         content = '''
             16.12.20 IRIS/BTC
             Vstup : 281
@@ -19,7 +19,6 @@ class TestBuyMessageParser(TestCase):
         self.assertEqual(msg.buy_price, Decimal('281'))
         self.assertEqual(msg.targets, [Decimal('310'), Decimal('332')])
         self.assertEqual(msg.stop_loss, Decimal('260'))
-
 
     def test_limitny_vstup(self):
         content = '''
@@ -78,3 +77,16 @@ class TestBuyMessageParser(TestCase):
         self.assertIsNone(msg.buy_price)
         self.assertEqual(msg.targets, [Decimal('76.81')])
         self.assertEqual(msg.stop_loss, Decimal('59.156'))
+
+    def test_vstup_market3(self):
+        content = '''
+            16.03.21 ALGO/USDT
+            Vstup: market 
+            1.Target 1.708 /44%/
+            Stop Loss: 0.988/16%/
+        '''
+        msg = BuyMessageParser.parse(content, parent_content=None)
+        self.assertEqual(msg.symbol, 'ALGOUSDT')
+        self.assertEqual(msg.buy_type, BuyMessage.BUY_MARKET)
+        self.assertEqual(msg.targets, [Decimal('1.708')])
+        self.assertEqual(msg.stop_loss, Decimal('0.988'))

@@ -58,7 +58,7 @@ class BuyMessageParser:
 
     @classmethod
     def _parse_targets(cls, normalized: str) -> List[Decimal]:
-        targets = [Decimal(price) for price in re.findall(r'(?:target|take profit): (\d+(?:\.\d*)?)', normalized)]
+        targets = [Decimal(price) for price in re.findall(r'(?:target|take profit)[:\s]+(\d+(?:\.\d*)?)', normalized)]
         assert len(targets) != 0, 'No targets found'
 
         return targets
