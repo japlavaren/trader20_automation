@@ -88,7 +88,7 @@ class BinanceApi:
     def get_all_orders(self, symbol: str):
         orders = [Order.from_dict(info, quantity_key='executedQty', time_key='updateTime')
                   for info in self._client.get_all_orders(symbol=symbol)]
-        orders.sort(key=lambda o: o.time, reverse=True)
+        orders.sort(key=lambda o: o.micro_time, reverse=True)
 
         return orders
 

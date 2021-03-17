@@ -130,7 +130,7 @@ class BombermanCoins:
 
     def _process_sold_orders(self, orders: List[Order], last_micro_time: int) -> None:
         for order in orders:
-            if order.time >= last_micro_time and self._is_oco_filled_sell_order(order):
+            if order.micro_time >= last_micro_time and self._is_oco_filled_sell_order(order):
                 sell_order = order
                 typ = order.type.lower().replace('_', ' ')
                 parts = [

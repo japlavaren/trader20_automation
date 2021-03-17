@@ -22,7 +22,7 @@ class Order:
     _STATUS = (STATUS_NEW, STATUS_FILLED, STATUS_CANCELED, STATUS_EXPIRED)
 
     def __init__(self, symbol: str, side: str, order_type: str, status: str, order_id: int,
-                 order_list_id: Optional[int], time: int, quantity: Decimal, price: Decimal) -> None:
+                 order_list_id: Optional[int], micro_time: int, quantity: Decimal, price: Decimal) -> None:
         assert side in (self.SIDE_BUY, self.SIDE_SELL), f'Got side {side}'
         assert order_type in self._TYPES, f'Got type {order_type}'
         assert status in self._STATUS, f'Got status {status}'
@@ -33,7 +33,7 @@ class Order:
         self.status: str = status
         self.order_id: int = order_id
         self.order_list_id: Optional[int] = order_list_id
-        self.time: int = time
+        self.micro_time: int = micro_time
         self.quantity: Decimal = quantity
         self.price: Decimal = price
         self.buy_message: Optional[BuyMessage] = None
