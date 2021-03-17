@@ -18,8 +18,8 @@ from automation.symbol_watcher import SymbolWatcher
 class CheckOrders(Thread):
     _INTERVAL = 60
 
-    def __init__(self, bomberman_coins: BombermanCoins, logger: Logger, *args, **kwargs) -> None:
-        super().__init__(target=self._check_orders, *args, **kwargs)
+    def __init__(self, bomberman_coins: BombermanCoins, logger: Logger) -> None:
+        super().__init__(target=self._check_orders)
         self._bomberman_coins: BombermanCoins = bomberman_coins
         self._logger: Logger = logger
         self._stop_event: Event = Event()

@@ -31,9 +31,10 @@ class BombermanCoins:
 
     def process_changed_orders(self, last_micro_time: int) -> None:
         for symbol in self._symbol_watcher.symbols:
-            api_orders = self._api.get_all_orders(symbol)
-            self._process_changed_limit_orders(symbol, api_orders)
-            self._process_sold_orders(api_orders, last_micro_time)
+            orders = self._api.get_all_orders(symbol)
+            self._process_changed_limit_orders(symbol, orders)
+            self._process_sold_orders(orders, last_micro_time)
+            self._unwatch_symbol(symbol, orders)
 
     def _spot_buy(self, message: BuyMessage) -> None:
         amount = self._spot_trade_amounts.get(message.currency, Decimal(0))
@@ -104,17 +105,17 @@ class BombermanCoins:
 
         self._logger.log_message('', parts)
 
-    def _process_changed_limit_orders(self, symbol: str, api_orders: List[Order]) -> None:
+    def _process_changed_limit_orders(self, symbol: str, orders: List[Order]) -> None:
         limit_orders = self._order_storage.get_orders_by_symbol(symbol)
         limit_order_ids = set(order.order_id for order in limit_orders)
 
-        for api_order in api_orders:
-            if api_order.order_id in limit_order_ids:
-                limit_order = [order for order in limit_orders if order.order_id == api_order.order_id][0]
+        for order in orders:
+            if order.order_id in limit_order_ids:
+                limit_order = [order for order in limit_orders if order.order_id == order.order_id][0]
 
-                if api_order.status == Order.STATUS_CANCELED:
+                if order.status == Order.STATUS_CANCELED:
                     self._order_storage.remove(limit_order)
-                elif api_order.status == Order.STATUS_FILLED:
+                elif order.status == Order.STATUS_FILLED:
                     buy_message = limit_order.buy_message
                     assert buy_message is not None
                     self._api.oco_sell(limit_order.symbol, limit_order.quantity, buy_message.targets,
@@ -126,8 +127,8 @@ class BombermanCoins:
                         f'SL: {buy_message.stop_loss}',
                     ])
 
-    def _process_sold_orders(self, api_orders: List[Order], last_micro_time: int) -> None:
-        for order in api_orders:
+    def _process_sold_orders(self, orders: List[Order], last_micro_time: int) -> None:
+        for order in orders:
             if order.time >= last_micro_time and self._is_oco_filled_sell_order(order):
                 sell_order = order
                 typ = order.type.lower().replace('_', ' ')
@@ -150,3 +151,10 @@ class BombermanCoins:
     def _is_oco_filled_sell_order(order: Order) -> bool:
         return (order.side == Order.SIDE_SELL and order.status == Order.STATUS_FILLED
                 and order.type in (Order.TYPE_LIMIT_MAKER, Order.TYPE_STOP_LOSS_LIMIT))
+
+    def _unwatch_symbol(self, symbol: str, orders: List[Order]) -> None:
+        for order in orders:
+            if order.status == Order.STATUS_NEW:
+                return
+        else:
+            self._symbol_watcher.remove(symbol)
