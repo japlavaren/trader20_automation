@@ -98,8 +98,7 @@ class BinanceApi:
                                     quantity=self._parse_decimal(first['origQty']),
                                     price=self._parse_decimal(first['price']))
                 stop_loss_limit = Order(second['symbol'], second['side'], second['type'], second['status'],
-                                        second['orderId'],
-                                        quantity=self._parse_decimal(second['origQty']),
+                                        second['orderId'], quantity=self._parse_decimal(second['origQty']),
                                         price=self._parse_decimal(second['price']),
                                         stop_price=self._parse_decimal(second['stopPrice']))
                 oco_orders.append((limit_maker, stop_loss_limit))

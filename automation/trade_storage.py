@@ -16,13 +16,13 @@ class TradeStorage:
         if trade not in self._trades:
             self._trades.append(trade)
 
-        self.save()
+        self._save()
 
     def remove_trade(self, trade: Trade) -> None:
         self._trades.remove(trade)
-        self.save()
+        self._save()
 
-    def save(self) -> None:
+    def _save(self) -> None:
         with open(self._file_path, 'wb') as h:
             pickle.dump(self._trades, h)
 
