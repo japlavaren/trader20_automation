@@ -21,6 +21,7 @@ class CheckOrders(Thread):
     def __init__(self, bomberman_coins: BombermanCoins, logger: Logger) -> None:
         super().__init__(target=self._check_orders)
         self._bomberman_coins: BombermanCoins = bomberman_coins
+        self.wait_event: Event = Event()
         self._logger: Logger = logger
         self._stop_event: Event = Event()
 
@@ -32,7 +33,7 @@ class CheckOrders(Thread):
 
         while not self._stop_event.is_set():
             try:
-                if (time() - last_time) >= self._INTERVAL:
+                if (time() - last_time) >= self._INTERVAL and not self.wait_event.is_set():
                     self._bomberman_coins.process_changed_orders(last_micro_time=int(last_time * 1000))
                     last_time = time()
                 else:
@@ -69,6 +70,7 @@ if __name__ == '__main__':
     async def on_message(message: DiscordMessage) -> None:
         try:
             if message.channel.id == config['discord']['channel']:
+                check_orders.wait_event.set()
                 parent_content = None
 
                 if message.reference is not None and message.reference.resolved is not None:
@@ -79,6 +81,8 @@ if __name__ == '__main__':
             logger.log('UNKNOWN MESSAGE', message.content)
         except:
             logger.log('ERROR', message.content + '\n\n' + traceback.format_exc())
+        finally:
+            check_orders.wait_event.clear()
 
 
     try:
