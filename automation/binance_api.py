@@ -5,6 +5,8 @@ from typing import Any, Dict, List, Tuple
 
 from binance.client import Client
 
+from automation.trade import Order, Trade
+
 Precision = namedtuple('Precision', 'quantity, price')
 
 
@@ -15,7 +17,7 @@ class BinanceApi:
         self._client: Client = client
         self.__precisions: Dict[str, Precision] = {}
 
-    def market_buy(self, symbol: str, amount: Decimal) -> Tuple[Decimal, Decimal]:
+    def market_buy(self, symbol: str, amount: Decimal) -> Trade:
         precision = self._get_precision(symbol)
         info = self._client.order_market_buy(
             symbol=symbol,
@@ -26,7 +28,8 @@ class BinanceApi:
         bought_amount = self._parse_decimal(info['cummulativeQuoteQty'])
         buy_price = self._round(bought_amount / bought_quantity, precision.price)
 
-        return bought_quantity, buy_price
+        return Trade(Order(info['symbol'], info['side'], info['type'], info['status'], info['orderId'],
+                           bought_quantity, buy_price))
 
     def market_sell(self, symbol: str, quantity: Decimal) -> Decimal:
         precision = self._get_precision(symbol)
@@ -41,7 +44,7 @@ class BinanceApi:
 
         return sell_price
 
-    def limit_buy(self, symbol: str, price: Decimal, amount: Decimal) -> None:
+    def limit_buy(self, symbol: str, price: Decimal, amount: Decimal) -> Trade:
         quantity = amount / price
         precision = self._get_precision(symbol)
         info = self._client.order_limit_buy(
@@ -49,40 +52,57 @@ class BinanceApi:
             price=self._round(price, precision.price),
             quantity=self._round(quantity, precision.quantity),
         )
-        assert info['status'] in (Client.ORDER_STATUS_FILLED, Client.ORDER_STATUS_NEW), f'Got {info["status"]} status'
 
-    def oco_sell(self, symbol: str, targets: List[Decimal], total_quantity: Decimal, stop_loss: Decimal) -> None:
-        precision = self._get_precision(symbol)
-        quantities = self._get_target_quantities(total_quantity, len(targets), precision)
+        return Trade(Order(info['symbol'], info['side'], info['type'], info['status'], info['orderId'],
+                           quantity=self._parse_decimal(info['origQty']), price=self._parse_decimal(info['price'])))
+
+    def oco_sell(self, trade: Trade, targets: List[Decimal], stop_loss: Decimal) -> None:
+        buy_order = trade.buy_order
+        assert buy_order.status == Order.STATUS_FILLED
+        precision = self._get_precision(buy_order.symbol)
+        quantities = self._get_target_quantities(buy_order.quantity, len(targets), precision)
         stop_price = stop_loss * (1 + self.STOP_PRICE_CORRECTION)
 
         for price, quantity in zip(targets, quantities):
-            info = self._client.order_oco_sell(
-                symbol=symbol,
+            oco_info = self._client.order_oco_sell(
+                symbol=buy_order.symbol,
                 quantity=quantity,
                 price=self._round(price, precision.price),
                 stopPrice=self._round(stop_price, precision.price),
                 stopLimitPrice=self._round(stop_loss, precision.price),
                 stopLimitTimeInForce=Client.TIME_IN_FORCE_FOK,
             )
-            assert info['listStatusType'] == 'EXEC_STARTED'
+            assert oco_info['listStatusType'] == 'EXEC_STARTED'
 
-    def get_oco_orders(self, symbol: str) -> List[Tuple[int, Decimal]]:
+            for info in oco_info['orderReports']:
+                stop_price_value = self._parse_decimal(info['stopPrice']) if 'stopPrice' in info else None
+                trade.add_sell_order(Order(info['symbol'], info['side'], info['type'], info['status'], info['orderId'],
+                                           self._parse_decimal(info['origQty']), self._parse_decimal(info['price']),
+                                           stop_price_value))
+
+    def get_oco_orders(self, symbol: str) -> List[Tuple[Order, Order]]:
         all_orders = self._client.get_open_orders(symbol=symbol)
-        sorted(all_orders, key=lambda o: o['type'])
+        all_orders.sort(key=lambda o: o['type'])
         grouped_orders: Dict[int, List[Dict[str, Any]]] = {}
         oco_orders = []
 
         for order in all_orders:
             grouped_orders.setdefault(order['orderListId'], []).append(order)
 
-        oco_order_types = Client.ORDER_TYPE_STOP_LOSS_LIMIT, Client.ORDER_TYPE_LIMIT_MAKER
+        oco_order_types = Client.ORDER_TYPE_LIMIT_MAKER, Client.ORDER_TYPE_STOP_LOSS_LIMIT
 
         for orders in grouped_orders.values():
             if len(orders) == 2 and (orders[0]['type'], orders[1]['type']) == oco_order_types:
-                order_id = orders[0]['orderId']
-                quantity = self._parse_decimal(orders[0]['origQty'])
-                oco_orders.append((order_id, quantity))
+                first, second = orders[0], orders[1]
+                limit_maker = Order(first['symbol'], first['side'], first['type'], first['status'], first['orderId'],
+                                    quantity=self._parse_decimal(first['origQty']),
+                                    price=self._parse_decimal(first['price']))
+                stop_loss_limit = Order(second['symbol'], second['side'], second['type'], second['status'],
+                                        second['orderId'],
+                                        quantity=self._parse_decimal(second['origQty']),
+                                        price=self._parse_decimal(second['price']),
+                                        stop_price=self._parse_decimal(second['stopPrice']))
+                oco_orders.append((limit_maker, stop_loss_limit))
 
         return oco_orders
 

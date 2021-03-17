@@ -9,6 +9,7 @@ from automation.bomberman_coins import BombermanCoins
 from automation.functions import load_config
 from automation.logger import Logger
 from automation.parser.message_parser import UnknownMessage
+from automation.trade_storage import TradeStorage
 
 if __name__ == '__main__':
     parser = ArgumentParser()
@@ -26,8 +27,9 @@ if __name__ == '__main__':
     binance_client = BinanceClient(config['binance_api']['key'],
                                    config['binance_api']['secret'])
     binance_api = BinanceApi(binance_client)
+    trades_storage = TradeStorage('data/trades.p')
     bomberman_coins = BombermanCoins(config['app']['spot']['trade_amount'],
-                                     binance_api, logger)
+                                     binance_api, logger, trades_storage)
 
 
     @discord_client.event
