@@ -1,5 +1,7 @@
 import traceback
 from argparse import ArgumentParser
+from threading import Event, Thread
+from time import sleep, time
 
 from binance.client import Client as BinanceClient
 from discord import Client as DiscordClient, Message as DiscordMessage
@@ -10,6 +12,33 @@ from automation.functions import load_config
 from automation.logger import Logger
 from automation.parser.message_parser import UnknownMessage
 from automation.trade_storage import TradeStorage
+
+
+class CheckOrders(Thread):
+    _INTERVAL = 60
+
+    def __init__(self, bomberman_coins: BombermanCoins, logger: Logger, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self._bomberman_coins: BombermanCoins = bomberman_coins
+        self._logger: Logger = logger
+        self._stop_event: Event = Event()
+
+    def stop(self) -> None:
+        self._stop_event.set()
+
+    def run(self) -> None:
+        start = time()
+
+        while not self._stop_event.isSet():
+            try:
+                if (time() - start) >= self._INTERVAL:
+                    self._bomberman_coins.process_changes()
+                    start = time()
+
+                sleep(1)
+            except:
+                logger.log('ERROR', traceback.format_exc())
+
 
 if __name__ == '__main__':
     parser = ArgumentParser()
@@ -30,6 +59,8 @@ if __name__ == '__main__':
     trades_storage = TradeStorage('data/trades.p')
     bomberman_coins = BombermanCoins(config['app']['spot']['trade_amount'],
                                      binance_api, logger, trades_storage)
+    check_orders = CheckOrders(bomberman_coins, logger)
+    check_orders.run()
 
 
     @discord_client.event
@@ -50,8 +81,9 @@ if __name__ == '__main__':
 
     try:
         discord_client.run(config['discord']['token'], bot=False)
-    except KeyboardInterrupt:
-        raise
-    except:
-        logger.log('TERMINATED', traceback.format_exc())
-        exit(1)
+    except Exception as e:
+        check_orders.stop()
+
+        if not isinstance(e, KeyboardInterrupt):
+            logger.log('TERMINATED', traceback.format_exc())
+            exit(1)

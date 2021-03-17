@@ -1,5 +1,5 @@
 import pickle
-from typing import List
+from typing import List, Set
 
 from automation.trade import Trade
 
@@ -9,10 +9,14 @@ class TradeStorage:
         self._file_path: str = file_path
         self._trades: List[Trade] = self._load_trades()
 
+    @property
+    def symbols(self) -> Set:
+        return set(trade.buy_order.symbol for trade in self._trades)
+
     def get_trades_by_symbol(self, symbol: str) -> List[Trade]:
         return [trade for trade in self._trades if trade.buy_order.symbol == symbol]
 
-    def add_trade(self, trade: Trade) -> None:
+    def save_trade(self, trade: Trade) -> None:
         if trade not in self._trades:
             self._trades.append(trade)
 
