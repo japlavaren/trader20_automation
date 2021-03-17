@@ -21,7 +21,7 @@ class BinanceApi:
             symbol=symbol,
             quoteOrderQty=self._round(amount, precision.price),
         )
-        assert info['status'] == 'FILLED', f'Got {info["status"]} status'
+        assert info['status'] == Client.ORDER_STATUS_FILLED, f'Got {info["status"]} status'
         bought_quantity = self._parse_decimal(info['executedQty'])
         bought_amount = self._parse_decimal(info['cummulativeQuoteQty'])
         buy_price = self._round(bought_amount / bought_quantity, precision.price)
@@ -34,7 +34,7 @@ class BinanceApi:
             symbol=symbol,
             quantity=self._round(quantity, precision.quantity),
         )
-        assert info['status'] == 'FILLED', f'Got {info["status"]} status'
+        assert info['status'] == Client.ORDER_STATUS_FILLED, f'Got {info["status"]} status'
         sold_amount = self._parse_decimal(info['cummulativeQuoteQty'])
         sold_quantity = self._parse_decimal(info['executedQty'])
         sell_price = self._round(sold_amount / sold_quantity, precision.price)
@@ -49,7 +49,7 @@ class BinanceApi:
             price=self._round(price, precision.price),
             quantity=self._round(quantity, precision.quantity),
         )
-        assert info['status'] in ('FILLED', 'NEW'), f'Got {info["status"]} status'
+        assert info['status'] in (Client.ORDER_STATUS_FILLED, Client.ORDER_STATUS_NEW), f'Got {info["status"]} status'
 
     def oco_sell(self, symbol: str, targets: List[Decimal], total_quantity: Decimal, stop_loss: Decimal) -> None:
         precision = self._get_precision(symbol)
@@ -63,7 +63,7 @@ class BinanceApi:
                 price=self._round(price, precision.price),
                 stopPrice=self._round(stop_price, precision.price),
                 stopLimitPrice=self._round(stop_loss, precision.price),
-                stopLimitTimeInForce='FOK',
+                stopLimitTimeInForce=Client.TIME_IN_FORCE_FOK,
             )
             assert info['listStatusType'] == 'EXEC_STARTED'
 
@@ -76,8 +76,10 @@ class BinanceApi:
         for order in all_orders:
             grouped_orders.setdefault(order['orderListId'], []).append(order)
 
+        oco_order_types = Client.ORDER_TYPE_STOP_LOSS_LIMIT, Client.ORDER_TYPE_LIMIT_MAKER
+
         for orders in grouped_orders.values():
-            if len(orders) == 2 and orders[0]['type'] == 'STOP_LOSS_LIMIT' and orders[1]['type'] == 'LIMIT_MAKER':
+            if len(orders) == 2 and (orders[0]['type'], orders[1]['type']) == oco_order_types:
                 order_id = orders[0]['orderId']
                 quantity = self._parse_decimal(orders[0]['origQty'])
                 oco_orders.append((order_id, quantity))
@@ -127,5 +129,5 @@ class BinanceApi:
     def _parse_decimal(value: str) -> Decimal:
         if '.' in value:
             value = value.rstrip('0')
-            
+
         return Decimal(value)
