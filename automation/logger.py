@@ -14,7 +14,8 @@ class Logger:
         self._email_password: str = email_password
 
     def log_message(self, content: str, parts: List[str]) -> None:
-        self.log(subject=', '.join(parts), body=content + '\n\n' + '\n'.join(parts))
+        body = content + '\n\n' + '\n'.join(parts)
+        self.log(subject=', '.join(parts), body=body.strip())
 
     def log(self, subject: str, body: str) -> None:
         time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')

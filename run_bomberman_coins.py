@@ -10,15 +10,16 @@ from automation.binance_api import BinanceApi
 from automation.bomberman_coins import BombermanCoins
 from automation.functions import load_config
 from automation.logger import Logger
+from automation.order_storage import OrderStorage
 from automation.parser.message_parser import UnknownMessage
-from automation.trade_storage import TradeStorage
+from automation.symbol_watcher import SymbolWatcher
 
 
 class CheckOrders(Thread):
     _INTERVAL = 60
 
     def __init__(self, bomberman_coins: BombermanCoins, logger: Logger, *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
+        super().__init__(target=self._check_orders, *args, **kwargs)
         self._bomberman_coins: BombermanCoins = bomberman_coins
         self._logger: Logger = logger
         self._stop_event: Event = Event()
@@ -26,16 +27,16 @@ class CheckOrders(Thread):
     def stop(self) -> None:
         self._stop_event.set()
 
-    def run(self) -> None:
-        start = time()
+    def _check_orders(self) -> None:
+        last_time = time()
 
-        while not self._stop_event.isSet():
+        while not self._stop_event.is_set():
             try:
-                if (time() - start) >= self._INTERVAL:
-                    self._bomberman_coins.process_changes()
-                    start = time()
-
-                sleep(1)
+                if (time() - last_time) >= self._INTERVAL:
+                    self._bomberman_coins.process_changed_orders(last_micro_time=int(last_time * 1000))
+                    last_time = time()
+                else:
+                    sleep(1)
             except:
                 logger.log('ERROR', traceback.format_exc())
 
@@ -56,11 +57,12 @@ if __name__ == '__main__':
     binance_client = BinanceClient(config['binance_api']['key'],
                                    config['binance_api']['secret'])
     binance_api = BinanceApi(binance_client)
-    trades_storage = TradeStorage('data/trades.p')
+    symbol_watcher = SymbolWatcher('data/symbols.json')
+    order_storage = OrderStorage('data/orders.pickle')
     bomberman_coins = BombermanCoins(config['app']['spot']['trade_amount'],
-                                     binance_api, logger, trades_storage)
+                                     binance_api, symbol_watcher, order_storage, logger)
     check_orders = CheckOrders(bomberman_coins, logger)
-    check_orders.run()
+    check_orders.start()
 
 
     @discord_client.event

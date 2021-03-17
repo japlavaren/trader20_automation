@@ -1,21 +1,23 @@
 from decimal import Decimal
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 from automation.binance_api import BinanceApi
 from automation.logger import Logger
+from automation.order_storage import OrderStorage
 from automation.parser.message_parser import BuyMessage, MessageParser, UnknownMessage
 from automation.parser.sell_message_parser import SellMessage
-from automation.trade import Order, Trade
-from automation.trade_storage import TradeStorage
+from automation.order import Order
+from automation.symbol_watcher import SymbolWatcher
 
 
 class BombermanCoins:
-    def __init__(self, spot_trade_amounts: Dict[str, Decimal], api: BinanceApi, logger: Logger,
-                 trade_storage: TradeStorage) -> None:
+    def __init__(self, spot_trade_amounts: Dict[str, Decimal], api: BinanceApi, symbol_watcher: SymbolWatcher,
+                 order_storage: OrderStorage, logger: Logger) -> None:
         self._spot_trade_amounts: Dict[str, Decimal] = spot_trade_amounts
         self._api: BinanceApi = api
+        self._symbol_watcher: SymbolWatcher = symbol_watcher
+        self._order_storage: OrderStorage = order_storage
         self._logger: Logger = logger
-        self._storage: TradeStorage = trade_storage
 
     def process(self, content: str, parent_content: Optional[str]) -> None:
         message = MessageParser.parse(content, parent_content)
@@ -27,11 +29,11 @@ class BombermanCoins:
 
         raise UnknownMessage()
 
-    def process_changes(self):
-        for symbol in self._storage.symbols:
-            for trade, api_order in self._get_changed_trades(symbol):
-                if api_order.side == Order.SIDE_BUY:
-                    self._process_changed_buy_trade(trade, api_order)
+    def process_changed_orders(self, last_micro_time: int) -> None:
+        for symbol in self._symbol_watcher.symbols:
+            api_orders = self._api.get_all_orders(symbol)
+            self._process_changed_limit_orders(symbol, api_orders)
+            self._process_sold_orders(api_orders, last_micro_time)
 
     def _spot_buy(self, message: BuyMessage) -> None:
         amount = self._spot_trade_amounts.get(message.currency, Decimal(0))
@@ -41,6 +43,8 @@ class BombermanCoins:
             self._logger.log(msg, message.content)
             return
 
+        self._symbol_watcher.add_symbol(message.symbol)
+
         if message.buy_type == BuyMessage.BUY_MARKET:
             buy_order = self._api.market_buy(message.symbol, amount)
         elif message.buy_type == BuyMessage.BUY_LIMIT:
@@ -49,27 +53,23 @@ class BombermanCoins:
         else:
             raise UnknownMessage()
 
-        trade = Trade(buy_order, message.targets, message.stop_loss, message.content)
-        self._storage.save_trade(trade)
-        status = buy_order.status
-
-        if status == Order.STATUS_NEW:
-            self._logger.log_message(trade.message_content, [
+        if buy_order.status == Order.STATUS_NEW:
+            buy_order.buy_message = message
+            self._order_storage.add_limit_order(buy_order)
+            self._logger.log_message(message.content, [
                 f'Spot limit buy order {buy_order.symbol}',
                 f'price: {buy_order.price}',
             ])
-        elif status == Order.STATUS_FILLED:
-            self._api.oco_sell(trade)
-            self._storage.save_trade(trade)
-
-            self._logger.log_message(trade.message_content, [
+        elif buy_order.status == Order.STATUS_FILLED:
+            self._api.oco_sell(message.symbol, buy_order.quantity, message.targets, message.stop_loss)
+            self._logger.log_message(message.content, [
                 f'Spot market bought {buy_order.symbol}',
                 f'price: {buy_order.price}',
-                'TP: ' + ', '.join(str(o.price) for o in trade.get_orders_by_type(Order.TYPE_LIMIT_MAKER)),
-                f'SL: {trade.get_orders_by_type(Order.TYPE_STOP_LOSS_LIMIT)[0].price}',
+                'TP: ' + ', '.join(str(target) for target in message.targets),
+                f'SL: {message.stop_loss}',
             ])
         else:
-            raise Exception(f'Unknown order status {status}')
+            raise Exception(f'Unknown order status {buy_order.status}')
 
     def _spot_sell(self, message: SellMessage) -> None:
         if message.sell_type == SellMessage.SELL_MARKET:
@@ -79,62 +79,74 @@ class BombermanCoins:
 
     def _spot_market_sell(self, message: SellMessage) -> None:
         symbol = message.symbol
-        oco_orders = self._api.get_oco_orders(symbol)
+        oco_orders = self._api.get_oco_sell_orders(symbol)
         assert len(oco_orders) != 0, 'None OCO sell orders found'
         total_quantity = Decimal(0)
 
         # cancel all oco orders
-        for order, _ in oco_orders:
-            self._api.cancel_order(symbol, order.order_id)
-            total_quantity += order.quantity
+        for oco_order, _ in oco_orders:
+            self._api.cancel_order(symbol, oco_order.order_id)
+            total_quantity += oco_order.quantity
 
         sell_order = self._api.market_sell(symbol, total_quantity)
-        sell_price = sell_order.price
         parts = [
             f'Spot market sold {symbol}',
-            f'price: {sell_price}',
+            f'price: {sell_order.price}',
         ]
-        trades = self._storage.get_trades_by_symbol(symbol)
+        buy_order = self._api.get_last_buy_order(symbol)
 
-        # add statistics if there is just one buy trade
-        if len(trades) == 1:
-            buy_price = trades[0].buy_order.price
-            diff = sell_price - buy_price
-            parts.append(f'profit: {diff / buy_price * 100:.2f}%')
+        if buy_order is not None and buy_order.quantity >= total_quantity:
+            diff = sell_order.price - buy_order.price
+            parts.append(f'profit: {diff / buy_order.price * 100:.2f}%')
             parts.append(f'gain: {diff * total_quantity}')
+        else:
+            parts.append('unknown profit')
 
-        self._logger.log_message(message.content, parts)
+        self._logger.log_message('', parts)
 
-        for trade in trades:
-            self._storage.remove_trade(trade)
+    def _process_changed_limit_orders(self, symbol: str, api_orders: List[Order]) -> None:
+        limit_orders = self._order_storage.get_orders_by_symbol(symbol)
+        limit_order_ids = set(order.order_id for order in limit_orders)
 
-    def _process_changed_buy_trade(self, trade: Trade, api_order: Order) -> None:
-        if api_order.status == Order.STATUS_CANCELED:
-            self._storage.remove_trade(trade)
-        elif trade.buy_order.status == Order.STATUS_NEW and api_order.status == Order.STATUS_FILLED:  # limit bought
-            self._api.oco_sell(trade)
-            self._storage.save_trade(trade)
-            buy_order = trade.buy_order
+        for api_order in api_orders:
+            if api_order.order_id in limit_order_ids:
+                limit_order = [order for order in limit_orders if order.order_id == api_order.order_id][0]
 
-            self._logger.log_message(trade.message_content, [
-                f'Spot limit bought {buy_order.symbol}',
-                f'price: {buy_order.price}',
-                'TP: ' + ', '.join(str(o.price) for o in trade.get_orders_by_type(Order.TYPE_LIMIT_MAKER)),
-                f'SL: {trade.get_orders_by_type(Order.TYPE_STOP_LOSS_LIMIT)[0].price}',
-            ])
+                if api_order.status == Order.STATUS_CANCELED:
+                    self._order_storage.remove(limit_order)
+                elif api_order.status == Order.STATUS_FILLED:
+                    buy_message = limit_order.buy_message
+                    assert buy_message is not None
+                    self._api.oco_sell(limit_order.symbol, limit_order.quantity, buy_message.targets,
+                                       buy_message.stop_loss)
+                    self._logger.log_message(buy_message.content, [
+                        f'Spot limit bought {limit_order.symbol}',
+                        f'price: {limit_order.price}',
+                        'TP: ' + ', '.join(str(target) for target in buy_message.targets),
+                        f'SL: {buy_message.stop_loss}',
+                    ])
 
-    def _get_changed_trades(self, symbol: str) -> List[Tuple[Trade, Order]]:
-        trades = self._storage.get_trades_by_symbol(symbol)
-        api_orders = self._api.get_orders(symbol)
-        changed_trades: List[Tuple[Trade, Order]] = []
+    def _process_sold_orders(self, api_orders: List[Order], last_micro_time: int) -> None:
+        for order in api_orders:
+            if order.time >= last_micro_time and self._is_oco_filled_sell_order(order):
+                sell_order = order
+                typ = order.type.lower().replace('_', ' ')
+                parts = [
+                    f'Spot {typ} sold {sell_order.symbol}',
+                    f'price: {sell_order.price}',
+                ]
+                buy_order = self._api.get_last_buy_order(sell_order.symbol)
 
-        for trade in trades:
-            order_ids = set(order.order_id for order in trade.orders)
+                if buy_order is not None and buy_order.quantity >= sell_order.quantity:
+                    diff = sell_order.price - buy_order.price
+                    parts.append(f'profit: {diff / buy_order.price * 100:.2f}%')
+                    parts.append(f'gain: {diff * sell_order.quantity}')
+                else:
+                    parts.append('unknown profit')
 
-            for api_order in api_orders:
-                if api_order.order_id in order_ids:
-                    for order in trade.orders:
-                        if order.order_id == api_order.order_id and order.status != api_order.status:
-                            changed_trades.append((trade, api_order))
+                self._logger.log_message('', parts)
 
-        return changed_trades
+    @staticmethod
+    def _is_oco_filled_sell_order(order: Order) -> bool:
+        return (order.side == Order.SIDE_SELL and order.status == Order.STATUS_FILLED
+                and order.type in (Order.TYPE_LIMIT_MAKER, Order.TYPE_STOP_LOSS_LIMIT))
