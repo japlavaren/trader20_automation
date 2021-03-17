@@ -85,7 +85,7 @@ class BombermanCoins:
         total_quantity = Decimal(0)
 
         # cancel all oco orders
-        for oco_order, _ in oco_orders:
+        for oco_order, *_ in oco_orders:
             self._api.cancel_order(symbol, oco_order.order_id)
             total_quantity += oco_order.quantity
 
@@ -126,6 +126,7 @@ class BombermanCoins:
                         'TP: ' + ', '.join(str(target) for target in buy_message.targets),
                         f'SL: {buy_message.stop_loss}',
                     ])
+                    self._order_storage.remove(limit_order)
 
     def _process_sold_orders(self, orders: List[Order], last_micro_time: int) -> None:
         for order in orders:

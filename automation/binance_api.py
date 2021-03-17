@@ -61,7 +61,7 @@ class BinanceApi:
         stop_price = stop_loss * (1 + self.STOP_PRICE_CORRECTION)
 
         for price, quantity in zip(targets, quantities):
-            oco_info = self._client.order_oco_sell(
+            info = self._client.order_oco_sell(
                 symbol=symbol,
                 quantity=quantity,
                 price=precision_round(price, precision.price),
@@ -69,7 +69,7 @@ class BinanceApi:
                 stopLimitPrice=precision_round(stop_loss, precision.price),
                 stopLimitTimeInForce=Client.TIME_IN_FORCE_FOK,
             )
-            assert oco_info['listStatusType'] == 'EXEC_STARTED'
+            assert info['listStatusType'] == 'EXEC_STARTED'
 
     def get_last_buy_order(self, symbol: str) -> Optional[Order]:
         api_orders = self._client.get_all_orders(symbol=symbol)
@@ -92,26 +92,29 @@ class BinanceApi:
 
         return orders
 
-    def get_oco_sell_orders(self, symbol: str) -> List[Tuple[Order, Order]]:
+    def get_oco_sell_orders(self, symbol: str) -> List[List[Order, Order]]:
         all_orders = [Order.from_dict(info, 'origQty', time_key='updateTime')
                       for info in self._client.get_open_orders(symbol=symbol)]
         all_orders.sort(key=lambda o: o.type)
         grouped: Dict[int, List[Order]] = {}
 
         for order in all_orders:
-            if order.side == Order.SIDE_SELL and order.status == Order.STATUS_NEW and order.order_list_id is not None:
+            if self._is_oco_sell_order(order):
                 grouped.setdefault(order.order_list_id, []).append(order)
 
-        oco_order_types = Client.ORDER_TYPE_LIMIT_MAKER, Client.ORDER_TYPE_STOP_LOSS_LIMIT
-        oco_orders: List[Tuple[Order, Order]] = []
+        oco_orders = list(grouped.values())
 
-        for orders in grouped.values():
-            if len(orders) == 2 and (orders[0].type, orders[1].type) == oco_order_types:
-                limit_maker = orders[0]
-                stop_loss_limit = orders[1]
-                oco_orders.append((limit_maker, stop_loss_limit))
+        for orders in oco_orders:
+            assert len(orders) == 2
+            assert orders[0].type == Order.TYPE_LIMIT_MAKER
+            assert orders[1].type == Order.TYPE_STOP_LOSS_LIMIT
 
         return oco_orders
+
+    @staticmethod
+    def _is_oco_sell_order(order: Order) -> bool:
+        return (order.side == Order.SIDE_SELL and order.status == Order.STATUS_NEW and order.order_list_id is not None
+                and order.type in (Client.ORDER_TYPE_LIMIT_MAKER, Client.ORDER_TYPE_STOP_LOSS_LIMIT))
 
     def cancel_order(self, symbol: str, order_id: int) -> None:
         info = self._client.cancel_order(symbol=symbol, orderId=order_id)
