@@ -1,5 +1,5 @@
 import pickle
-from typing import List
+from typing import List, Optional
 
 from automation.order import Order
 
@@ -9,8 +9,10 @@ class OrderStorage:
         self._file_path: str = file_path
         self._orders: List[Order] = self._load()
 
-    def get_orders_by_symbol(self, symbol: str) -> List[Order]:
-        return [order for order in self._orders if order.symbol == symbol]
+    def get_order_by_symbol_and_order_id(self, symbol: str, order_id: int) -> Optional[Order]:
+        orders = [order for order in self._orders if order.symbol == symbol and order.order_id == order_id]
+
+        return orders[0] if len(orders) != 0 else None
 
     def add_limit_order(self, order: Order) -> None:
         assert order not in self._orders

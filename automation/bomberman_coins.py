@@ -1,21 +1,21 @@
 from decimal import Decimal
-from typing import Dict, List, Optional
+from time import sleep
+from typing import Any, Dict, Optional
 
 from automation.binance_api import BinanceApi
+from automation.functions import parse_decimal
 from automation.logger import Logger
 from automation.order_storage import OrderStorage
 from automation.parser.message_parser import BuyMessage, MessageParser, UnknownMessage
 from automation.parser.sell_message_parser import SellMessage
 from automation.order import Order
-from automation.symbol_watcher import SymbolWatcher
 
 
 class BombermanCoins:
-    def __init__(self, spot_trade_amounts: Dict[str, Decimal], api: BinanceApi, symbol_watcher: SymbolWatcher,
-                 order_storage: OrderStorage, logger: Logger) -> None:
+    def __init__(self, spot_trade_amounts: Dict[str, Decimal], api: BinanceApi, order_storage: OrderStorage,
+                 logger: Logger) -> None:
         self._spot_trade_amounts: Dict[str, Decimal] = spot_trade_amounts
         self._api: BinanceApi = api
-        self._symbol_watcher: SymbolWatcher = symbol_watcher
         self._order_storage: OrderStorage = order_storage
         self._logger: Logger = logger
 
@@ -29,12 +29,18 @@ class BombermanCoins:
 
         raise UnknownMessage()
 
-    def process_changed_orders(self, last_micro_time: int) -> None:
-        for symbol in self._symbol_watcher.symbols:
-            orders = self._api.get_all_orders(symbol)
-            self._process_changed_limit_orders(symbol, orders)
-            self._process_sold_orders(orders, last_micro_time)
-            self._unwatch_symbol(symbol, orders)
+    def process_order_message(self, msg: Dict[str, Any]) -> None:
+        assert msg['e'] == 'executionReport'
+        api_order = Order(symbol=msg['s'], side=msg['S'], order_type=msg['o'], status=msg['X'], order_id=msg['i'],
+                          order_list_id=msg['g'] if msg['g'] != -1 else None, micro_time=msg['T'],
+                          quantity=parse_decimal(msg['l']), price=parse_decimal(msg['L']))
+
+        if api_order.side == Order.SIDE_BUY:
+            if api_order.type == Order.TYPE_LIMIT:
+                self._process_limit_buy_order(api_order)
+        elif api_order.side == Order.SIDE_SELL:
+            if api_order.type in (Order.TYPE_LIMIT_MAKER, Order.TYPE_STOP_LOSS_LIMIT):
+                self._process_oco_sell_order(api_order)
 
     def _spot_buy(self, message: BuyMessage) -> None:
         amount = self._spot_trade_amounts.get(message.currency, Decimal(0))
@@ -45,8 +51,6 @@ class BombermanCoins:
                 body=Logger.join_contents(message.content, message.parent_content),
             )
             return
-
-        self._symbol_watcher.add_symbol(message.symbol)
 
         if message.buy_type == BuyMessage.BUY_MARKET:
             buy_order = self._api.market_buy(message.symbol, amount)
@@ -62,17 +66,19 @@ class BombermanCoins:
             self._logger.log_message(
                 content=Logger.join_contents(message.content, message.parent_content),
                 parts=[
-                    f'Spot limit buy order {buy_order.symbol}',
+                    f'Spot limit buy order created {buy_order.symbol}',
                     f'price: {buy_order.price}',
                 ],
             )
         elif buy_order.status == Order.STATUS_FILLED:
+            sleep(1)  # creating sell order directly after market buy caused problems
             self._api.oco_sell(message.symbol, buy_order.quantity, message.targets, message.stop_loss)
             self._logger.log_message(
                 content=Logger.join_contents(message.content, message.parent_content),
                 parts=[
                     f'Spot market bought {buy_order.symbol}',
                     f'price: {buy_order.price}',
+                    'OCO sell order created',
                     'TP: ' + ', '.join(str(target) for target in message.targets),
                     f'SL: {message.stop_loss}',
                 ],
@@ -113,60 +119,46 @@ class BombermanCoins:
 
         self._logger.log_message('', parts)
 
-    def _process_changed_limit_orders(self, symbol: str, orders: List[Order]) -> None:
-        limit_orders = self._order_storage.get_orders_by_symbol(symbol)
-        limit_order_ids = set(order.order_id for order in limit_orders)
+    def _process_limit_buy_order(self, api_order: Order) -> None:
+        original_order = self._order_storage.get_order_by_symbol_and_order_id(api_order.symbol, api_order.order_id)
 
-        for order in orders:
-            if order.order_id in limit_order_ids:
-                limit_order = [order for order in limit_orders if order.order_id == order.order_id][0]
+        if original_order is None:
+            return
+        elif api_order.status == Order.STATUS_CANCELED:
+            self._order_storage.remove(original_order)
+        elif api_order.status == Order.STATUS_FILLED:
+            buy_message = original_order.buy_message
+            assert buy_message is not None
+            self._api.oco_sell(original_order.symbol, api_order.quantity, buy_message.targets,
+                               buy_message.stop_loss)
+            self._logger.log_message(
+                content=Logger.join_contents(buy_message.content, buy_message.parent_content),
+                parts=[
+                    f'Spot limit bought {original_order.symbol}',
+                    f'price: {original_order.price}',
+                    'OCO sell order created',
+                    'TP: ' + ', '.join(str(target) for target in buy_message.targets),
+                    f'SL: {buy_message.stop_loss}',
+                ],
+            )
+            self._order_storage.remove(original_order)
 
-                if order.status == Order.STATUS_CANCELED:
-                    self._order_storage.remove(limit_order)
-                elif order.status == Order.STATUS_FILLED:
-                    buy_message = limit_order.buy_message
-                    assert buy_message is not None
-                    self._api.oco_sell(limit_order.symbol, limit_order.quantity, buy_message.targets,
-                                       buy_message.stop_loss)
-                    self._logger.log_message(
-                        content=Logger.join_contents(buy_message.content, buy_message.parent_content),
-                        parts=[
-                            f'Spot limit bought {limit_order.symbol}',
-                            f'price: {limit_order.price}',
-                            'TP: ' + ', '.join(str(target) for target in buy_message.targets),
-                            f'SL: {buy_message.stop_loss}',
-                        ],
-                    )
-                    self._order_storage.remove(limit_order)
+    def _process_oco_sell_order(self, sell_order: Order) -> None:
+        if sell_order.status != Order.STATUS_FILLED:
+            return
 
-    def _process_sold_orders(self, orders: List[Order], last_micro_time: int) -> None:
-        for order in orders:
-            if order.micro_time >= last_micro_time and self._is_oco_filled_sell_order(order):
-                sell_order = order
-                typ = order.type.lower().replace('_', ' ')
-                parts = [
-                    f'Spot {typ} sold {sell_order.symbol}',
-                    f'price: {sell_order.price}',
-                ]
-                buy_order = self._api.get_last_buy_order(sell_order.symbol)
+        typ = sell_order.type.lower().replace('_', ' ')
+        parts = [
+            f'Spot OCO {typ} sold {sell_order.symbol}',
+            f'price: {sell_order.price}',
+        ]
+        buy_order = self._api.get_last_buy_order(sell_order.symbol)
 
-                if buy_order is not None and buy_order.quantity >= sell_order.quantity:
-                    diff = sell_order.price - buy_order.price
-                    parts.append(f'profit: {diff / buy_order.price * 100:.2f}%')
-                    parts.append(f'gain: {diff * sell_order.quantity}')
-                else:
-                    parts.append('unknown profit')
-
-                self._logger.log_message('', parts)
-
-    @staticmethod
-    def _is_oco_filled_sell_order(order: Order) -> bool:
-        return (order.side == Order.SIDE_SELL and order.status == Order.STATUS_FILLED
-                and order.type in (Order.TYPE_LIMIT_MAKER, Order.TYPE_STOP_LOSS_LIMIT))
-
-    def _unwatch_symbol(self, symbol: str, orders: List[Order]) -> None:
-        for order in orders:
-            if order.status == Order.STATUS_NEW:
-                return
+        if buy_order is not None and buy_order.quantity >= sell_order.quantity:
+            diff = sell_order.price - buy_order.price
+            parts.append(f'profit: {diff / buy_order.price * 100:.2f}%')
+            parts.append(f'gain: {diff * sell_order.quantity}')
         else:
-            self._symbol_watcher.remove(symbol)
+            parts.append('unknown profit')
+
+        self._logger.log_message('', parts)
