@@ -71,7 +71,7 @@ class BombermanCoins:
                 ],
             )
         elif buy_order.status == Order.STATUS_FILLED:
-            sleep(1)  # creating sell order directly after market buy caused problems
+            sleep(1)  # creating sell order directly after market buy is causing problems
             self._api.oco_sell(message.symbol, buy_order.quantity, message.targets, message.stop_loss)
             self._logger.log_message(
                 content=Logger.join_contents(message.content, message.parent_content),
