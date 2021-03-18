@@ -5,6 +5,7 @@ from typing import Any, Dict
 from binance.client import Client as BinanceClient
 from binance.websockets import BinanceSocketManager
 from discord import Client as DiscordClient, Message as DiscordMessage
+from twisted.internet import reactor
 
 from automation.binance_api import BinanceApi
 from automation.bomberman_coins import BombermanCoins
@@ -74,3 +75,4 @@ if __name__ == '__main__':
         exit(1)
     finally:
         binance_socket.close()
+        reactor.stop()
