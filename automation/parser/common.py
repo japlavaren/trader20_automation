@@ -10,9 +10,8 @@ class UnknownMessage(Exception):
 
 def normalize(msg: str) -> str:
     msg = unidecode(msg)  # remove diacritic
-    msg = ' '.join(msg.split())  # remove multiple spaces
-    msg = re.sub(r'\s*:\s*', ': ', msg)  # normalize spaces around colon
-    msg = re.sub(r'\s*/\s*', '/', msg)  # remove spaces around slash
+    msg = re.sub(r'[ \t]+', ' ', msg)  # remove multiple spaces, keep new lines
+    msg = re.sub(r'\s*([:/])\s*', r'\1', msg)  # remove spaces around colon and slash
 
     return msg.lower()
 

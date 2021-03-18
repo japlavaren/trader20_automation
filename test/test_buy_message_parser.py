@@ -90,3 +90,16 @@ class TestBuyMessageParser(TestCase):
         self.assertEqual(msg.buy_type, BuyMessage.BUY_MARKET)
         self.assertEqual(msg.targets, [Decimal('1.708')])
         self.assertEqual(msg.stop_loss, Decimal('0.988'))
+
+    def test_target_stop_loss(self):
+        content = '''
+            18.03.21 WAVES/USDT
+            Vstup : market
+            1. target : 11.68 /14.25%/
+            2. target : 9.10 /-11.05%/
+        '''
+        msg = BuyMessageParser.parse(content, parent_content=None)
+        self.assertEqual(msg.symbol, 'WAVESUSDT')
+        self.assertEqual(msg.buy_type, BuyMessage.BUY_MARKET)
+        self.assertEqual(msg.targets, [Decimal('11.68')])
+        self.assertEqual(msg.stop_loss, Decimal('9.1'))

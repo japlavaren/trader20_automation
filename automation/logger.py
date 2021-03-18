@@ -1,7 +1,7 @@
 import smtplib
 from datetime import datetime
 from email.message import EmailMessage
-from typing import List
+from typing import List, Optional
 
 
 class Logger:
@@ -14,7 +14,8 @@ class Logger:
         self._email_password: str = email_password
 
     def log_message(self, content: str, parts: List[str]) -> None:
-        self.log(subject=', '.join(parts), body=content + '\n\n' + '\n'.join(parts))
+        body = content + '\n\n' + '\n'.join(parts)
+        self.log(subject=', '.join(parts), body=body.strip())
 
     def log(self, subject: str, body: str) -> None:
         time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -31,3 +32,7 @@ class Logger:
         with smtplib.SMTP_SSL(self._email_host, 465) as server:
             server.login(self._email_user, self._email_password)
             server.send_message(msg)
+
+    @staticmethod
+    def join_contents(content: str, parent_content: Optional[str]) -> str:
+        return content + ('\n-----\n' + parent_content if parent_content is not None else '')
