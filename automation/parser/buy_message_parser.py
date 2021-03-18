@@ -9,9 +9,10 @@ class BuyMessage:
     BUY_MARKET = 'market'
     BUY_LIMIT = 'limit'
 
-    def __init__(self, content: str, symbol: str, currency: str, buy_type: str, buy_price: Optional[Decimal],
-                 targets: List[Decimal], stop_loss: Decimal) -> None:
+    def __init__(self, content: str, parent_content: Optional[str], symbol: str, currency: str, buy_type: str,
+                 buy_price: Optional[Decimal], targets: List[Decimal], stop_loss: Decimal) -> None:
         self.content: str = content
+        self.parent_content: Optional[str] = parent_content
         self.symbol: str = symbol
         self.currency: str = currency
         self.buy_type: str = buy_type
@@ -32,7 +33,7 @@ class BuyMessageParser:
         targets = cls._parse_targets(normalized)
         stop_loss = cls._parse_stop_loss(normalized, targets)
 
-        return BuyMessage(content, symbol, currency, buy['type'], buy['price'], targets, stop_loss)
+        return BuyMessage(content, parent_content, symbol, currency, buy['type'], buy['price'], targets, stop_loss)
 
     @classmethod
     def _parse_buy(cls, normalized: str) -> Dict[str, Any]:

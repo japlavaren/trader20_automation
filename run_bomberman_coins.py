@@ -68,19 +68,22 @@ if __name__ == '__main__':
 
     @discord_client.event
     async def on_message(message: DiscordMessage) -> None:
+        content = ''
+        parent_content = None
+
         try:
             if message.channel.id == config['discord']['channel']:
                 check_orders.wait_event.set()
-                parent_content = None
+                content = message.content
 
                 if message.reference is not None and message.reference.resolved is not None:
                     parent_content = message.reference.resolved.content
 
-                bomberman_coins.process(message.content, parent_content)
+                bomberman_coins.process(content, parent_content)
         except UnknownMessage:
-            logger.log('UNKNOWN MESSAGE', message.content)
+            logger.log('UNKNOWN MESSAGE', Logger.join_contents(content, parent_content))
         except:
-            logger.log('ERROR', message.content + '\n\n' + traceback.format_exc())
+            logger.log('ERROR', Logger.join_contents(content, parent_content) + '\n\n' + traceback.format_exc())
         finally:
             check_orders.wait_event.clear()
 

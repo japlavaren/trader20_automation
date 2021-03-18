@@ -40,8 +40,10 @@ class BombermanCoins:
         amount = self._spot_trade_amounts.get(message.currency, Decimal(0))
 
         if amount == Decimal(0):
-            msg = f'SKIPPING spot {message.symbol}'
-            self._logger.log(msg, message.content)
+            self._logger.log(
+                f'SKIPPING spot {message.symbol}',
+                body=Logger.join_contents(message.content, message.parent_content),
+            )
             return
 
         self._symbol_watcher.add_symbol(message.symbol)
@@ -57,18 +59,24 @@ class BombermanCoins:
         if buy_order.status == Order.STATUS_NEW:
             buy_order.buy_message = message
             self._order_storage.add_limit_order(buy_order)
-            self._logger.log_message(message.content, [
-                f'Spot limit buy order {buy_order.symbol}',
-                f'price: {buy_order.price}',
-            ])
+            self._logger.log_message(
+                content=Logger.join_contents(message.content, message.parent_content),
+                parts=[
+                    f'Spot limit buy order {buy_order.symbol}',
+                    f'price: {buy_order.price}',
+                ],
+            )
         elif buy_order.status == Order.STATUS_FILLED:
             self._api.oco_sell(message.symbol, buy_order.quantity, message.targets, message.stop_loss)
-            self._logger.log_message(message.content, [
-                f'Spot market bought {buy_order.symbol}',
-                f'price: {buy_order.price}',
-                'TP: ' + ', '.join(str(target) for target in message.targets),
-                f'SL: {message.stop_loss}',
-            ])
+            self._logger.log_message(
+                content=Logger.join_contents(message.content, message.parent_content),
+                parts=[
+                    f'Spot market bought {buy_order.symbol}',
+                    f'price: {buy_order.price}',
+                    'TP: ' + ', '.join(str(target) for target in message.targets),
+                    f'SL: {message.stop_loss}',
+                ],
+            )
         else:
             raise Exception(f'Unknown order status {buy_order.status}')
 
@@ -120,12 +128,15 @@ class BombermanCoins:
                     assert buy_message is not None
                     self._api.oco_sell(limit_order.symbol, limit_order.quantity, buy_message.targets,
                                        buy_message.stop_loss)
-                    self._logger.log_message(buy_message.content, [
-                        f'Spot limit bought {limit_order.symbol}',
-                        f'price: {limit_order.price}',
-                        'TP: ' + ', '.join(str(target) for target in buy_message.targets),
-                        f'SL: {buy_message.stop_loss}',
-                    ])
+                    self._logger.log_message(
+                        content=Logger.join_contents(buy_message.content, buy_message.parent_content),
+                        parts=[
+                            f'Spot limit bought {limit_order.symbol}',
+                            f'price: {limit_order.price}',
+                            'TP: ' + ', '.join(str(target) for target in buy_message.targets),
+                            f'SL: {buy_message.stop_loss}',
+                        ],
+                    )
                     self._order_storage.remove(limit_order)
 
     def _process_sold_orders(self, orders: List[Order], last_micro_time: int) -> None:

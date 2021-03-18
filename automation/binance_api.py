@@ -92,7 +92,7 @@ class BinanceApi:
 
         return orders
 
-    def get_oco_sell_orders(self, symbol: str) -> List[List[Order, Order]]:
+    def get_oco_sell_orders(self, symbol: str) -> List[List[Order]]:
         all_orders = [Order.from_dict(info, 'origQty', time_key='updateTime')
                       for info in self._client.get_open_orders(symbol=symbol)]
         all_orders.sort(key=lambda o: o.type)
@@ -100,6 +100,7 @@ class BinanceApi:
 
         for order in all_orders:
             if self._is_oco_sell_order(order):
+                assert order.order_list_id is not None
                 grouped.setdefault(order.order_list_id, []).append(order)
 
         oco_orders = list(grouped.values())

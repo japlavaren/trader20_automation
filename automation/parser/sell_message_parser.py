@@ -6,8 +6,9 @@ from automation.parser.common import normalize, parse_symbol, UnknownMessage
 class SellMessage:
     SELL_MARKET = 'market'
 
-    def __init__(self, content: str, symbol: str, currency: str, sell_type: str) -> None:
+    def __init__(self, content: str, parent_content: Optional[str], symbol: str, currency: str, sell_type: str) -> None:
         self.content: str = content
+        self.parent_content: Optional[str] = parent_content
         self.symbol: str = symbol
         self.currency: str = currency
         self.sell_type: str = sell_type
@@ -21,12 +22,7 @@ class SellMessageParser:
         cls._check_is_sell(normalized)
         symbol, currency = cls._parse_symbol(normalized, parent_normalized)
 
-        return SellMessage(
-            content=content,
-            symbol=symbol,
-            currency=currency,
-            sell_type=SellMessage.SELL_MARKET,
-        )
+        return SellMessage(content, parent_content, symbol, currency, sell_type=SellMessage.SELL_MARKET)
 
     @staticmethod
     def _check_is_sell(normalized: str) -> None:
