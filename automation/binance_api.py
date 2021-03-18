@@ -85,13 +85,6 @@ class BinanceApi:
         else:
             return None
 
-    def get_all_orders(self, symbol: str):
-        orders = [Order.from_dict(info, quantity_key='executedQty', time_key='updateTime')
-                  for info in self._client.get_all_orders(symbol=symbol)]
-        orders.sort(key=lambda o: o.micro_time, reverse=True)
-
-        return orders
-
     def get_oco_sell_orders(self, symbol: str) -> List[List[Order]]:
         all_orders = [Order.from_dict(info, 'origQty', time_key='updateTime')
                       for info in self._client.get_open_orders(symbol=symbol)]
