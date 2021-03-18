@@ -1,6 +1,6 @@
 from decimal import Decimal
 from time import sleep
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from automation.binance_api import BinanceApi
 from automation.functions import parse_decimal
@@ -76,12 +76,9 @@ class BombermanCoins:
             self._logger.log_message(
                 content=Logger.join_contents(message.content, message.parent_content),
                 parts=[
-                    f'Spot market bought {buy_order.symbol}',
-                    f'price: {buy_order.price}',
-                    'OCO sell order created',
-                    'TP: ' + ', '.join(str(target) for target in message.targets),
-                    f'SL: {message.stop_loss}',
-                ],
+                          f'Spot market bought {buy_order.symbol}',
+                          f'price: {buy_order.price}',
+                      ] + self._get_oco_message_parts(message.targets, message.stop_loss),
             )
         else:
             raise Exception(f'Unknown order status {buy_order.status}')
@@ -104,20 +101,10 @@ class BombermanCoins:
             total_quantity += oco_order.quantity
 
         sell_order = self._api.market_sell(symbol, total_quantity)
-        parts = [
+        self._logger.log_message('', [
             f'Spot market sold {symbol}',
             f'price: {sell_order.price}',
-        ]
-        buy_order = self._api.get_last_buy_order(symbol)
-
-        if buy_order is not None and buy_order.quantity >= total_quantity:
-            diff = sell_order.price - buy_order.price
-            parts.append(f'profit: {diff / buy_order.price * 100:.2f}%')
-            parts.append(f'gain: {diff * total_quantity}')
-        else:
-            parts.append('unknown profit')
-
-        self._logger.log_message('', parts)
+        ] + self._get_profit_message_parts(symbol, total_quantity, sell_order.price))
 
     def _process_limit_buy_order(self, api_order: Order) -> None:
         original_order = self._order_storage.get_order_by_symbol_and_order_id(api_order.symbol, api_order.order_id)
@@ -134,12 +121,9 @@ class BombermanCoins:
             self._logger.log_message(
                 content=Logger.join_contents(buy_message.content, buy_message.parent_content),
                 parts=[
-                    f'Spot limit bought {original_order.symbol}',
-                    f'price: {original_order.price}',
-                    'OCO sell order created',
-                    'TP: ' + ', '.join(str(target) for target in buy_message.targets),
-                    f'SL: {buy_message.stop_loss}',
-                ],
+                          f'Spot limit bought {original_order.symbol}',
+                          f'price: {original_order.price}',
+                      ] + self._get_oco_message_parts(buy_message.targets, buy_message.stop_loss),
             )
             self._order_storage.remove(original_order)
 
@@ -148,17 +132,28 @@ class BombermanCoins:
             return
 
         typ = sell_order.type.lower().replace('_', ' ')
-        parts = [
+        self._logger.log_message('', [
             f'Spot OCO {typ} sold {sell_order.symbol}',
             f'price: {sell_order.price}',
+        ] + self._get_profit_message_parts(sell_order.symbol, sell_order.quantity, sell_order.price))
+
+    def _get_profit_message_parts(self, symbol: str, quantity: Decimal, sell_price: Decimal) -> List[str]:
+        buy_order = self._api.get_last_buy_order(symbol)
+
+        if buy_order is None or buy_order.quantity < quantity:
+            return ['unknown profit']
+
+        diff = sell_price - buy_order.price
+
+        return [
+            f'profit: {diff / buy_order.price * 100:.2f}%',
+            f'gain: {diff * quantity}',
         ]
-        buy_order = self._api.get_last_buy_order(sell_order.symbol)
 
-        if buy_order is not None and buy_order.quantity >= sell_order.quantity:
-            diff = sell_order.price - buy_order.price
-            parts.append(f'profit: {diff / buy_order.price * 100:.2f}%')
-            parts.append(f'gain: {diff * sell_order.quantity}')
-        else:
-            parts.append('unknown profit')
-
-        self._logger.log_message('', parts)
+    @staticmethod
+    def _get_oco_message_parts(targets: List[Decimal], stop_loss: Decimal) -> List[str]:
+        return [
+            'OCO sell order created',
+            'TP: ' + ', '.join(str(target) for target in targets),
+            f'SL: {stop_loss}',
+        ]
