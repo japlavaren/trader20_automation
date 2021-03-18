@@ -19,10 +19,20 @@
 
 ## Run
 
-`python run_bomberman_coins.py 100` 100 is amount per each transaction
+`python run_bomberman_coins.py`
 
 I strongly recommend running command within [supervisor](http://supervisord.org/running.html), which restarts command
-when error occurs.
+when error occurs. Example supervisor config `/etc/supervisor/conf.d/trader20_automation.conf`:
+
+```
+[program:trader20_automation]
+command=/bin/bash -c 'cd /var/python/trader20_automation && source venv/bin/activate && python run_bomberman_coins.py'
+autostart=true
+autorestart=true
+numprocs=1
+stderr_logfile=/var/python/trader20_automation/log/supervisor.err.log
+stdout_logfile=/var/python/trader20_automation/log/supervisor.out.log
+```
 
 ## Donate
 
