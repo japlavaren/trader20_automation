@@ -32,7 +32,7 @@ class BombermanCoins:
     def process_order_message(self, msg: Dict[str, Any]) -> None:
         assert msg['e'] == 'executionReport'
         api_order = Order(symbol=msg['s'], side=msg['S'], order_type=msg['o'], status=msg['X'], order_id=msg['i'],
-                          order_list_id=msg['g'] if msg['g'] != -1 else None, micro_time=msg['T'],
+                          order_list_id=msg['g'] if msg['g'] != -1 else None,
                           quantity=parse_decimal(msg['l']), price=parse_decimal(msg['L']))
 
         if api_order.side == Order.SIDE_BUY:

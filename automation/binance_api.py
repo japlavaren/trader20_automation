@@ -24,7 +24,7 @@ class BinanceApi:
             symbol=symbol,
             quoteOrderQty=precision_round(amount, precision.price),
         )
-        order = Order.from_dict(info, quantity_key='executedQty', time_key='transactTime')
+        order = Order.from_dict(info, quantity_key='executedQty')
         order.price = parse_decimal(info['cummulativeQuoteQty']) / order.quantity  # price is zero in original response
         assert order.status == Order.STATUS_FILLED
 
@@ -39,7 +39,7 @@ class BinanceApi:
             quantity=precision_round(quantity, precision.quantity),
         )
         quantity_key = 'executedQty' if info['status'] == Order.STATUS_FILLED else 'origQty'
-        order = Order.from_dict(info, quantity_key, time_key='transactTime')
+        order = Order.from_dict(info, quantity_key)
         assert order.status in (Order.STATUS_NEW, Order.STATUS_FILLED)
 
         return order
@@ -50,7 +50,7 @@ class BinanceApi:
             symbol=symbol,
             quantity=precision_round(total_quantity, precision.quantity),
         )
-        order = Order.from_dict(info, quantity_key='executedQty', time_key='transactTime')
+        order = Order.from_dict(info, quantity_key='executedQty')
         assert order.status == Order.STATUS_FILLED
 
         return order
@@ -77,7 +77,7 @@ class BinanceApi:
 
         for api_order in api_orders:
             if api_order['side'] == Order.SIDE_BUY and api_order['status'] == Order.STATUS_FILLED:
-                order = Order.from_dict(api_order, quantity_key='executedQty', time_key='updateTime')
+                order = Order.from_dict(api_order, quantity_key='executedQty')
                 # price is zero in original response
                 order.price = parse_decimal(api_order['cummulativeQuoteQty']) / order.quantity
 
@@ -86,8 +86,7 @@ class BinanceApi:
             return None
 
     def get_oco_sell_orders(self, symbol: str) -> List[List[Order]]:
-        all_orders = [Order.from_dict(info, 'origQty', time_key='updateTime')
-                      for info in self._client.get_open_orders(symbol=symbol)]
+        all_orders = [Order.from_dict(info, 'origQty') for info in self._client.get_open_orders(symbol=symbol)]
         all_orders.sort(key=lambda o: o.type)
         grouped: Dict[int, List[Order]] = {}
 

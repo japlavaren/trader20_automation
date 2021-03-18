@@ -23,7 +23,7 @@ class Order:
     _STATUSES = (STATUS_NEW, STATUS_FILLED, STATUS_PARTIALLY_FILLED, STATUS_CANCELED, STATUS_EXPIRED)
 
     def __init__(self, symbol: str, side: str, order_type: str, status: str, order_id: int,
-                 order_list_id: Optional[int], micro_time: int, quantity: Decimal, price: Decimal) -> None:
+                 order_list_id: Optional[int], quantity: Decimal, price: Decimal) -> None:
         assert side in (self.SIDE_BUY, self.SIDE_SELL), f'Got side {side}'
         assert order_type in self._TYPES, f'Got type {order_type}'
         assert status in self._STATUSES, f'Got status {status}'
@@ -35,16 +35,15 @@ class Order:
         self.status: str = status
         self.order_id: int = order_id
         self.order_list_id: Optional[int] = order_list_id
-        self.micro_time: int = micro_time
         self.quantity: Decimal = quantity
         self.price: Decimal = price
         self.buy_message: Optional[BuyMessage] = None
 
     @staticmethod
-    def from_dict(values: Dict[str, Any], quantity_key: str, time_key: str) -> 'Order':
+    def from_dict(values: Dict[str, Any], quantity_key: str) -> 'Order':
         order_list_id = values['orderListId'] if values['orderListId'] != -1 else None
         quantity = parse_decimal(values[quantity_key])
         price = parse_decimal(values['price'])
 
         return Order(values['symbol'], values['side'], values['type'], values['status'], values['orderId'],
-                     order_list_id, values[time_key], quantity, price)
+                     order_list_id, quantity, price)

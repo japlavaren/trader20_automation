@@ -75,4 +75,4 @@ if __name__ == '__main__':
         exit(1)
     finally:
         binance_socket.close()
-        reactor.stop()
+        reactor.stop()  # type: ignore
