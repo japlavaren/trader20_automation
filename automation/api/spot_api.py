@@ -1,22 +1,18 @@
 import math
-from collections import namedtuple
 from decimal import Decimal
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 from binance.client import Client
 
+from automation.api.api import Api, Precision
 from automation.functions import parse_decimal, precision_round
 from automation.order import Order
 
-Precision = namedtuple('Precision', 'quantity, price')
 
-
-class BinanceApi:
-    STOP_PRICE_CORRECTION = Decimal(0.5) / 100  # 0.5%
-
-    def __init__(self, client: Client) -> None:
-        self._client: Client = client
-        self.__precisions: Dict[str, Precision] = {}
+class SpotApi(Api):
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self._precisions: Dict[str, Precision] = {}
 
     def market_buy(self, symbol: str, amount: Decimal) -> Order:
         precision = self._get_precision(symbol)
@@ -44,11 +40,10 @@ class BinanceApi:
 
         return order
 
-    def market_sell(self, symbol: str, total_quantity: Decimal) -> Order:
-        precision = self._get_precision(symbol)
+    def market_sell(self, symbol: str, quantity: Decimal) -> Order:
         info = self._client.order_market_sell(
             symbol=symbol,
-            quantity=precision_round(total_quantity, precision.quantity),
+            quantity=quantity,
         )
         order = Order.from_dict(info, quantity_key='executedQty')
         assert order.status == Order.STATUS_FILLED
@@ -57,21 +52,21 @@ class BinanceApi:
 
     def oco_sell(self, symbol: str, quantity: Decimal, targets: List[Decimal], stop_loss: Decimal) -> None:
         precision = self._get_precision(symbol)
-        quantities = self._get_target_quantities(quantity, len(targets), precision)
-        stop_price = stop_loss * (1 + self.STOP_PRICE_CORRECTION)
+        stop_price = precision_round(stop_loss * (1 + self._STOP_PRICE_CORRECTION), precision.price)
+        stop_limit_price = precision_round(stop_loss, precision.price)
 
-        for price, quantity in zip(targets, quantities):
+        for price, quantity in zip(targets, self._get_target_quantities(quantity, len(targets), precision)):
             info = self._client.order_oco_sell(
                 symbol=symbol,
                 quantity=quantity,
-                price=precision_round(price, precision.price),
-                stopPrice=precision_round(stop_price, precision.price),
-                stopLimitPrice=precision_round(stop_loss, precision.price),
+                price=price,
+                stopPrice=stop_price,
+                stopLimitPrice=stop_limit_price,
                 stopLimitTimeInForce=Client.TIME_IN_FORCE_FOK,
             )
             assert info['listStatusType'] == 'EXEC_STARTED'
 
-    def get_last_buy_order(self, symbol: str) -> Optional[Order]:
+    def get_spot_last_buy_order(self, symbol: str) -> Optional[Order]:
         api_orders = self._client.get_all_orders(symbol=symbol)
         api_orders.sort(key=lambda o: o['updateTime'], reverse=True)
 
@@ -86,16 +81,17 @@ class BinanceApi:
             return None
 
     def get_oco_sell_orders(self, symbol: str) -> List[List[Order]]:
-        all_orders = [Order.from_dict(info, 'origQty') for info in self._client.get_open_orders(symbol=symbol)]
+        all_orders = [Order.from_dict(info, quantity_key='origQty')
+                      for info in self._client.get_open_orders(symbol=symbol)]
         all_orders.sort(key=lambda o: o.type)
-        grouped: Dict[int, List[Order]] = {}
+        grouped_filtered: Dict[int, List[Order]] = {}
 
         for order in all_orders:
             if self._is_oco_sell_order(order):
                 assert order.order_list_id is not None
-                grouped.setdefault(order.order_list_id, []).append(order)
+                grouped_filtered.setdefault(order.order_list_id, []).append(order)
 
-        oco_orders = list(grouped.values())
+        oco_orders = list(grouped_filtered.values())
 
         for orders in oco_orders:
             assert len(orders) == 2
@@ -104,17 +100,17 @@ class BinanceApi:
 
         return oco_orders
 
-    @staticmethod
-    def _is_oco_sell_order(order: Order) -> bool:
-        return (order.side == Order.SIDE_SELL and order.status == Order.STATUS_NEW and order.order_list_id is not None
-                and order.type in (Client.ORDER_TYPE_LIMIT_MAKER, Client.ORDER_TYPE_STOP_LOSS_LIMIT))
-
     def cancel_order(self, symbol: str, order_id: int) -> None:
         info = self._client.cancel_order(symbol=symbol, orderId=order_id)
         assert info['listStatusType'] == 'ALL_DONE'
 
+    @staticmethod
+    def _is_oco_sell_order(order: Order) -> bool:
+        return (order.side == Order.SIDE_SELL and order.status == Order.STATUS_NEW
+                and order.type in (Client.ORDER_TYPE_LIMIT_MAKER, Client.ORDER_TYPE_STOP_LOSS_LIMIT))
+
     def _get_precision(self, symbol: str) -> Precision:
-        if symbol not in self.__precisions:
+        if symbol not in self._precisions:
             info = self._client.get_symbol_info(symbol)
             quantity, price = None, None
 
@@ -129,15 +125,6 @@ class BinanceApi:
 
             assert quantity is not None, 'Unknown quantity precision'
             assert price is not None, 'Unknown price precision'
-            self.__precisions[symbol] = Precision(quantity, price)
+            self._precisions[symbol] = Precision(quantity, price)
 
-        return self.__precisions[symbol]
-
-    @staticmethod
-    def _get_target_quantities(total_quantity: Decimal, targets_count: int, precision: Precision) -> List[Decimal]:
-        assert targets_count != 0
-        trade_quantity = precision_round(total_quantity / targets_count, precision.quantity)
-        quantities = [trade_quantity for _ in range(targets_count)]
-        quantities[-1] = total_quantity - sum(quantities[:-1])
-
-        return quantities
+        return self._precisions[symbol]

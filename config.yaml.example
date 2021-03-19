@@ -6,6 +6,13 @@ app:
       USDT: 100
       BTC: 0.002
 
+  futures:
+    trade_amount:
+      USDT: 100
+      BTC: 0.002
+    leverage: SMART  # 1-125 / SMART
+    margin_type: ISOLATED  # ISOLATED / CROSS
+
 binance_api:
   key: BINANCE_API_KEY
   secret: BINANCE_API_SECRET

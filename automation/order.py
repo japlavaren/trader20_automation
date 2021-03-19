@@ -23,12 +23,11 @@ class Order:
     _STATUSES = (STATUS_NEW, STATUS_FILLED, STATUS_PARTIALLY_FILLED, STATUS_CANCELED, STATUS_EXPIRED)
 
     def __init__(self, symbol: str, side: str, order_type: str, status: str, order_id: int,
-                 order_list_id: Optional[int], quantity: Decimal, price: Decimal) -> None:
+                 order_list_id: Optional[int], quantity: Decimal, price: Decimal, futures: bool) -> None:
         assert side in (self.SIDE_BUY, self.SIDE_SELL), f'Got side {side}'
         assert order_type in self._TYPES, f'Got type {order_type}'
         assert status in self._STATUSES, f'Got status {status}'
         assert order_list_id != -1
-
         self.side: str = side
         self.symbol: str = symbol
         self.type: str = order_type
@@ -37,13 +36,14 @@ class Order:
         self.order_list_id: Optional[int] = order_list_id
         self.quantity: Decimal = quantity
         self.price: Decimal = price
+        self.futures: bool = futures
         self.buy_message: Optional[BuyMessage] = None
 
     @staticmethod
-    def from_dict(values: Dict[str, Any], quantity_key: str) -> 'Order':
+    def from_dict(values: Dict[str, Any], quantity_key: str, futures: bool = False) -> 'Order':
         order_list_id = values['orderListId'] if values['orderListId'] != -1 else None
         quantity = parse_decimal(values[quantity_key])
         price = parse_decimal(values['price'])
 
         return Order(values['symbol'], values['side'], values['type'], values['status'], values['orderId'],
-                     order_list_id, quantity, price)
+                     order_list_id, quantity, price, futures)

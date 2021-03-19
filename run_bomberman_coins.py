@@ -7,7 +7,8 @@ from binance.websockets import BinanceSocketManager
 from discord import Client as DiscordClient, Message as DiscordMessage
 from twisted.internet import reactor
 
-from automation.binance_api import BinanceApi
+from automation.api.futures_api import FuturesApi
+from automation.api.spot_api import SpotApi
 from automation.bomberman_coins import BombermanCoins
 from automation.functions import load_config
 from automation.logger import Logger
@@ -20,20 +21,23 @@ if __name__ == '__main__':
     args = parser.parse_args()
     config = load_config(args.config_file)
 
+    discord_client = DiscordClient()
+    binance_client = BinanceClient(config['binance_api']['key'],
+                                   config['binance_api']['secret'])
+    binance_socket = BinanceSocketManager(binance_client)
+    spot_api = SpotApi(binance_client)
+    futures_api = FuturesApi(config['app']['futures']['margin_type'], binance_client)
+    order_storage = OrderStorage('data/orders.pickle')
     logger = Logger('log/bomberman_coins.log',
                     config['email']['recipient'],
                     config['email']['host'],
                     config['email']['user'],
                     config['email']['password'])
-
-    discord_client = DiscordClient()
-    binance_client = BinanceClient(config['binance_api']['key'],
-                                   config['binance_api']['secret'])
-    binance_socket = BinanceSocketManager(binance_client)
-    binance_api = BinanceApi(binance_client)
-    order_storage = OrderStorage('data/orders.pickle')
-    bomberman_coins = BombermanCoins(config['app']['spot']['trade_amount'],
-                                     binance_api, order_storage, logger)
+    bomberman_coins = BombermanCoins(config['app']['market_type'],
+                                     config['app']['spot']['trade_amount'],
+                                     config['app']['futures']['trade_amount'],
+                                     config['app']['futures']['leverage'],
+                                     spot_api, futures_api, order_storage, logger)
 
 
     @discord_client.event
@@ -55,16 +59,27 @@ if __name__ == '__main__':
             logger.log('ERROR', Logger.join_contents(content, parent_content) + '\n\n' + traceback.format_exc())
 
 
-    def process_user_message(msg: Dict[str, Any]) -> None:
+    def process_spot_message(msg: Dict[str, Any]) -> None:
         try:
-            if msg['e'] == 'executionReport':
-                bomberman_coins.process_order_message(msg)
+            bomberman_coins.process_spot_message(msg)
+        except:
+            logger.log('ERROR', traceback.format_exc())
+
+
+    def process_futures_message(msg: Dict[str, Any]) -> None:
+        try:
+            bomberman_coins.process_futures_message(msg)
         except:
             logger.log('ERROR', traceback.format_exc())
 
 
     try:
-        binance_socket.start_user_socket(process_user_message)
+        binance_socket.start_user_socket(process_spot_message)
+        # there is no method for listening future changes in binance socket manager
+        binance_socket._start_futures_socket(
+            binance_client._request_futures_api('post', 'listenKey')['listenKey'],
+            process_futures_message,
+        )
         binance_socket.start()
 
         discord_client.run(config['discord']['token'], bot=False)
