@@ -1,0 +1,2 @@
+class UnknownMessage(Exception):
+    pass

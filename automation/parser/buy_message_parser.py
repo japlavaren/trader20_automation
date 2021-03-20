@@ -2,38 +2,24 @@ import re
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
-from automation.parser.common import normalize, parse_symbol, UnknownMessage
+from automation.message.buy_message import BuyMessage
+from automation.message.unknown_message import UnknownMessage
+from automation.parser.parser import Parser
 
 
-class BuyMessage:
-    BUY_MARKET = 'market'
-    BUY_LIMIT = 'limit'
-
-    def __init__(self, content: str, parent_content: Optional[str], symbol: str, currency: str, buy_type: str,
-                 buy_price: Optional[Decimal], targets: List[Decimal], stop_loss: Decimal) -> None:
-        self.content: str = content
-        self.parent_content: Optional[str] = parent_content
-        self.symbol: str = symbol
-        self.currency: str = currency
-        self.buy_type: str = buy_type
-        self.buy_price: Optional[Decimal] = buy_price
-        self.targets: List[Decimal] = targets
-        self.stop_loss: Decimal = stop_loss
-
-
-class BuyMessageParser:
+class BuyMessageParser(Parser):
     _NUM = r'\d+(?:\.\d*)?'
     _TARGET = fr'(?:target|take profit)[: ]({_NUM})'
 
     @classmethod
     def parse(cls, content: str, parent_content: Optional[str]) -> BuyMessage:
-        normalized = normalize(content)
+        normalized = cls._normalize(content)
         buy = cls._parse_buy(normalized)
-        symbol, currency = parse_symbol(normalized)
+        symbol = cls._parse_symbol(normalized)
         targets = cls._parse_targets(normalized)
         stop_loss = cls._parse_stop_loss(normalized, targets)
 
-        return BuyMessage(content, parent_content, symbol, currency, buy['type'], buy['price'], targets, stop_loss)
+        return BuyMessage(content, parent_content, symbol, buy['type'], buy['price'], targets, stop_loss)
 
     @classmethod
     def _parse_buy(cls, normalized: str) -> Dict[str, Any]:

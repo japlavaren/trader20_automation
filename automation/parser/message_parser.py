@@ -1,13 +1,14 @@
-from typing import Optional, Union
+from typing import Optional
 
-from automation.parser.buy_message_parser import BuyMessage, BuyMessageParser
-from automation.parser.common import UnknownMessage
-from automation.parser.sell_message_parser import SellMessage, SellMessageParser
+from automation.message.unknown_message import UnknownMessage
+from automation.parser.buy_message_parser import BuyMessageParser
+from automation.message.message import Message
+from automation.parser.sell_message_parser import SellMessageParser
 
 
 class MessageParser:
     @classmethod
-    def parse(cls, content: str, parent_content: Optional[str]) -> Union[BuyMessage, SellMessage]:
+    def parse(cls, content: str, parent_content: Optional[str]) -> Message:
         for parser in (BuyMessageParser, SellMessageParser):
             try:
                 # "Type[object]" has no attribute "parse"
