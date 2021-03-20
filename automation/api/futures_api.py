@@ -7,7 +7,7 @@ from binance.client import Client
 from binance.exceptions import BinanceAPIException
 
 from automation.api.api import Api, Precision
-from automation.functions import parse_decimal, precision_round
+from automation.functions import parse_decimal
 from automation.order import Order
 
 
@@ -51,13 +51,13 @@ class FuturesApi(Api):
 
     def market_buy(self, symbol: str, amount: Decimal) -> Order:
         self._set_futures_settings(symbol, self.leverage)
-        precision = self._get_precision(symbol)
+        precision = self.get_precision(symbol)
         price = self._get_current_price(symbol)
-        quantity = precision_round(amount / price, precision.quantity)
+        quantity = self._round(amount / price, precision.quantity)
         info = self._client.futures_create_order(
             side=Client.SIDE_BUY,
             type=Client.ORDER_TYPE_MARKET,
-            symbol=symbol,
+            symbol=self._normalize_symbol(symbol),
             quantity=quantity,
             timestamp=self._timestamp,
         )
@@ -69,12 +69,12 @@ class FuturesApi(Api):
 
     def limit_buy(self, symbol: str, price: Decimal, amount: Decimal) -> Order:
         self._set_futures_settings(symbol, self.leverage)
-        precision = self._get_precision(symbol)
-        quantity = precision_round(amount / price, precision.quantity)
+        precision = self.get_precision(symbol)
+        quantity = self._round(amount / price, precision.quantity)
         info = self._client.futures_create_order(
             side=Client.SIDE_BUY,
             type=Client.ORDER_TYPE_LIMIT,
-            symbol=symbol,
+            symbol=self._normalize_symbol(symbol),
             price=price,
             quantity=quantity,
             timestamp=self._timestamp,
@@ -90,7 +90,7 @@ class FuturesApi(Api):
         info = self._client.futures_create_order(
             side=Client.SIDE_SELL,
             type=Client.ORDER_TYPE_MARKET,
-            symbol=symbol,
+            symbol=self._normalize_symbol(symbol),
             quantity=quantity,
             timestamp=self._timestamp,
         )
@@ -101,8 +101,8 @@ class FuturesApi(Api):
         return order
 
     def oco_sell(self, symbol: str, quantity: Decimal, targets: List[Decimal], stop_loss: Decimal) -> None:
-        precision = self._get_precision(symbol)
-        stop_price = precision_round(stop_loss, precision.price)
+        precision = self.get_precision(symbol)
+        stop_price = self._round(stop_loss, precision.price)
 
         for price, quantity in zip(targets, self._get_target_quantities(quantity, len(targets), precision)):
             client_order_id = uuid4().hex
@@ -114,7 +114,7 @@ class FuturesApi(Api):
             newClientOrderId=client_order_id,
             side=Client.SIDE_SELL,
             type='STOP_MARKET',
-            symbol=symbol,
+            symbol=self._normalize_symbol(symbol),
             quantity=quantity,
             stopPrice=stop_price,
         )
@@ -125,7 +125,7 @@ class FuturesApi(Api):
             newClientOrderId=client_order_id,
             side=Client.SIDE_SELL,
             type='TAKE_PROFIT_MARKET',
-            symbol=symbol,
+            symbol=self._normalize_symbol(symbol),
             quantity=quantity,
             stopPrice=price,
         )
@@ -133,10 +133,13 @@ class FuturesApi(Api):
 
     def get_oco_sell_orders(self, symbol: str) -> List[List[Order]]:
         raise NotImplementedError()
-        # o = self._client.futures_get_open_orders(symbol=symbol)
+        # o = self._client.futures_get_open_orders(symbol=self._normalize_symbol(symbol))
         # a=1
 
     def cancel_order(self, symbol: str, order_id: int) -> None:
+        raise NotImplementedError()
+
+    def get_last_buy_order(self, symbol: str) -> Optional[Order]:
         raise NotImplementedError()
 
     @property
@@ -145,19 +148,19 @@ class FuturesApi(Api):
 
     def _set_futures_settings(self, symbol: str, leverage: int) -> None:
         try:
-            self._client.futures_change_margin_type(symbol=symbol, marginType=self._margin_type)
+            self._client.futures_change_margin_type(symbol=self._normalize_symbol(symbol), marginType=self._margin_type)
         except BinanceAPIException as e:
             if e.code != self._NO_NEED_TO_CHANGE_MARGIN:
                 raise
 
-        self._client.futures_change_leverage(symbol=symbol, leverage=leverage)
+        self._client.futures_change_leverage(symbol=self._normalize_symbol(symbol), leverage=leverage)
 
     def _get_current_price(self, symbol: str) -> Decimal:
-        info = self._client.get_symbol_ticker(symbol=symbol)
+        info = self._client.get_symbol_ticker(symbol=self._normalize_symbol(symbol))
 
         return parse_decimal(info['price'])
 
-    def _get_precision(self, symbol: str) -> Precision:
+    def get_precision(self, symbol: str) -> Precision:
         if len(self._precisions) == 0:
             _ = self.futures_symbols  # load symbols and precisions
 

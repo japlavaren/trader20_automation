@@ -18,8 +18,10 @@ binance_api:
   secret: BINANCE_API_SECRET
 
 discord:
-  channel: 759070661888704613
+  channel: 759070661888704613  # official Trader2.0 channel
+  #channel: 819957153476378634  # testing channel https://discord.gg/9rpkqBfArk
   token: DISCORD_TOKEN
+  test_user: null  # discord user
 
 email:
   recipient: YOUR_EMAIL

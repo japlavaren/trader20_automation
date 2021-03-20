@@ -42,6 +42,9 @@ if __name__ == '__main__':
 
     @discord_client.event
     async def on_message(message: DiscordMessage) -> None:
+        if config['discord']['test_user'] is not None and str(message.author) != config['discord']['test_user']:
+            return
+
         content = ''
         parent_content = None
 

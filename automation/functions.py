@@ -28,9 +28,3 @@ def parse_decimal(value: str) -> Decimal:
         value = value.rstrip('0')
 
     return Decimal(value)
-
-
-def precision_round(num: Decimal, precision: int) -> Decimal:
-    assert isinstance(num, Decimal)
-
-    return round(num, precision)

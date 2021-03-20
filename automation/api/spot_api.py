@@ -5,7 +5,7 @@ from typing import Dict, List, Optional
 from binance.client import Client
 
 from automation.api.api import Api, Precision
-from automation.functions import parse_decimal, precision_round
+from automation.functions import parse_decimal
 from automation.order import Order
 
 
@@ -15,10 +15,10 @@ class SpotApi(Api):
         self._precisions: Dict[str, Precision] = {}
 
     def market_buy(self, symbol: str, amount: Decimal) -> Order:
-        precision = self._get_precision(symbol)
+        precision = self.get_precision(symbol)
         info = self._client.order_market_buy(
-            symbol=symbol,
-            quoteOrderQty=precision_round(amount, precision.price),
+            symbol=self._normalize_symbol(symbol),
+            quoteOrderQty=self._round(amount, precision.price),
         )
         order = Order.from_dict(info, quantity_key='executedQty')
         order.price = parse_decimal(info['cummulativeQuoteQty']) / order.quantity  # price is zero in original response
@@ -28,11 +28,11 @@ class SpotApi(Api):
 
     def limit_buy(self, symbol: str, price: Decimal, amount: Decimal) -> Order:
         quantity = amount / price
-        precision = self._get_precision(symbol)
+        precision = self.get_precision(symbol)
         info = self._client.order_limit_buy(
-            symbol=symbol,
-            price=precision_round(price, precision.price),
-            quantity=precision_round(quantity, precision.quantity),
+            symbol=self._normalize_symbol(symbol),
+            price=self._round(price, precision.price),
+            quantity=self._round(quantity, precision.quantity),
         )
         quantity_key = 'executedQty' if info['status'] == Order.STATUS_FILLED else 'origQty'
         order = Order.from_dict(info, quantity_key)
@@ -42,32 +42,33 @@ class SpotApi(Api):
 
     def market_sell(self, symbol: str, quantity: Decimal) -> Order:
         info = self._client.order_market_sell(
-            symbol=symbol,
+            symbol=self._normalize_symbol(symbol),
             quantity=quantity,
         )
         order = Order.from_dict(info, quantity_key='executedQty')
+        # price is zero in original response
+        order.price = parse_decimal(info['cummulativeQuoteQty']) / order.quantity
         assert order.status == Order.STATUS_FILLED
 
         return order
 
     def oco_sell(self, symbol: str, quantity: Decimal, targets: List[Decimal], stop_loss: Decimal) -> None:
-        precision = self._get_precision(symbol)
-        stop_price = precision_round(stop_loss * (1 + self._STOP_PRICE_CORRECTION), precision.price)
-        stop_limit_price = precision_round(stop_loss, precision.price)
+        precision = self.get_precision(symbol)
+        stop_price = stop_loss * (1 + self._STOP_PRICE_CORRECTION)
 
         for price, quantity in zip(targets, self._get_target_quantities(quantity, len(targets), precision)):
             info = self._client.order_oco_sell(
-                symbol=symbol,
+                symbol=self._normalize_symbol(symbol),
                 quantity=quantity,
-                price=price,
-                stopPrice=stop_price,
-                stopLimitPrice=stop_limit_price,
+                price=self._round(price, precision.price),
+                stopPrice=self._round(stop_price, precision.price),
+                stopLimitPrice=self._round(stop_loss, precision.price),
                 stopLimitTimeInForce=Client.TIME_IN_FORCE_FOK,
             )
             assert info['listStatusType'] == 'EXEC_STARTED'
 
-    def get_spot_last_buy_order(self, symbol: str) -> Optional[Order]:
-        api_orders = self._client.get_all_orders(symbol=symbol)
+    def get_last_buy_order(self, symbol: str) -> Optional[Order]:
+        api_orders = self._client.get_all_orders(symbol=self._normalize_symbol(symbol))
         api_orders.sort(key=lambda o: o['updateTime'], reverse=True)
 
         for api_order in api_orders:
@@ -81,8 +82,8 @@ class SpotApi(Api):
             return None
 
     def get_oco_sell_orders(self, symbol: str) -> List[List[Order]]:
-        all_orders = [Order.from_dict(info, quantity_key='origQty')
-                      for info in self._client.get_open_orders(symbol=symbol)]
+        all_orders = [Order.from_dict(info, 'origQty')
+                      for info in self._client.get_open_orders(symbol=self._normalize_symbol(symbol))]
         all_orders.sort(key=lambda o: o.type)
         grouped_filtered: Dict[int, List[Order]] = {}
 
@@ -101,7 +102,7 @@ class SpotApi(Api):
         return oco_orders
 
     def cancel_order(self, symbol: str, order_id: int) -> None:
-        info = self._client.cancel_order(symbol=symbol, orderId=order_id)
+        info = self._client.cancel_order(symbol=self._normalize_symbol(symbol), orderId=order_id)
         assert info['listStatusType'] == 'ALL_DONE'
 
     @staticmethod
@@ -109,9 +110,9 @@ class SpotApi(Api):
         return (order.side == Order.SIDE_SELL and order.status == Order.STATUS_NEW
                 and order.type in (Client.ORDER_TYPE_LIMIT_MAKER, Client.ORDER_TYPE_STOP_LOSS_LIMIT))
 
-    def _get_precision(self, symbol: str) -> Precision:
+    def get_precision(self, symbol: str) -> Precision:
         if symbol not in self._precisions:
-            info = self._client.get_symbol_info(symbol)
+            info = self._client.get_symbol_info(symbol=self._normalize_symbol(symbol))
             quantity, price = None, None
 
             def parse(key: str) -> int:
