@@ -1,7 +1,8 @@
 from discord import Client
 
 from automation.functions import load_config
-from automation.parser.message_parser import MessageParser, UnknownMessage
+from automation.message.unknown_message import UnknownMessage
+from automation.parser.message_parser import MessageParser
 
 if __name__ == '__main__':
     config = load_config()
