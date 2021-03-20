@@ -1,8 +1,9 @@
 from decimal import Decimal
-from time import sleep
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
-from automation.binance_api import BinanceApi
+from automation.api.api import Api
+from automation.api.futures_api import FuturesApi
+from automation.api.spot_api import SpotApi
 from automation.functions import parse_decimal
 from automation.logger import Logger
 from automation.order_storage import OrderStorage
@@ -12,28 +13,45 @@ from automation.order import Order
 
 
 class BombermanCoins:
-    def __init__(self, spot_trade_amounts: Dict[str, Decimal], api: BinanceApi, order_storage: OrderStorage,
-                 logger: Logger) -> None:
-        self._spot_trade_amounts: Dict[str, Decimal] = spot_trade_amounts
-        self._api: BinanceApi = api
+    MARKET_TYPE_SPOT = 'SPOT'
+    MARKET_TYPE_FUTURES = 'FUTURES'
+
+    LEVERAGE_SMART = 'SMART'
+
+    def __init__(self, market_type: str, spot_trade_amounts: Dict[str, Decimal],
+                 futures_trade_amounts: Dict[str, Decimal], futures_leverage: Union[str, int],
+                 spot_api: SpotApi, futures_api: FuturesApi, order_storage: OrderStorage, logger: Logger) -> None:
+        assert market_type in (self.MARKET_TYPE_SPOT, self.MARKET_TYPE_FUTURES)
+        assert isinstance(futures_leverage, int) or futures_leverage == self.LEVERAGE_SMART
+        self._market_type: str = market_type
+        self._trade_amounts: Dict[str, Dict[str, Decimal]] = {
+            self.MARKET_TYPE_SPOT: spot_trade_amounts,
+            self.MARKET_TYPE_FUTURES: futures_trade_amounts,
+        }
+        self._futures_leverage: Union[str, int] = futures_leverage
+        self._spot_api: SpotApi = spot_api
+        self._futures_api: FuturesApi = futures_api
         self._order_storage: OrderStorage = order_storage
         self._logger: Logger = logger
 
     def process(self, content: str, parent_content: Optional[str]) -> None:
         message = MessageParser.parse(content, parent_content)
+        market_type = self.MARKET_TYPE_FUTURES if self._has_futures(message.symbol) else self.MARKET_TYPE_SPOT
 
         if isinstance(message, BuyMessage):
-            return self._spot_buy(message)
+            return self._buy(market_type, message)
         elif isinstance(message, SellMessage):
-            return self._spot_sell(message)
+            return self._sell(market_type, message)
 
         raise UnknownMessage()
 
-    def process_order_message(self, msg: Dict[str, Any]) -> None:
-        assert msg['e'] == 'executionReport'
+    def process_spot_message(self, msg: Dict[str, Any]) -> None:
+        if msg['e'] != 'executionReport':
+            return
+
         api_order = Order(symbol=msg['s'], side=msg['S'], order_type=msg['o'], status=msg['X'], order_id=msg['i'],
                           order_list_id=msg['g'] if msg['g'] != -1 else None,
-                          quantity=parse_decimal(msg['l']), price=parse_decimal(msg['L']))
+                          quantity=parse_decimal(msg['l']), price=parse_decimal(msg['L']), futures=False)
 
         if api_order.side == Order.SIDE_BUY:
             if api_order.type == Order.TYPE_LIMIT:
@@ -42,21 +60,30 @@ class BombermanCoins:
             if api_order.type in (Order.TYPE_LIMIT_MAKER, Order.TYPE_STOP_LOSS_LIMIT):
                 self._process_oco_sell_order(api_order)
 
-    def _spot_buy(self, message: BuyMessage) -> None:
-        amount = self._spot_trade_amounts.get(message.currency, Decimal(0))
+    def process_futures_message(self, msg: Dict[str, Any]) -> None:
+        a = 1  # TODO
+
+    def _has_futures(self, symbol: str) -> bool:
+        return self._market_type == self.MARKET_TYPE_FUTURES and symbol in self._futures_api.futures_symbols
+
+    def _buy(self, market_type: str, message: BuyMessage) -> None:
+        amount = self._trade_amounts[market_type].get(message.currency, Decimal(0))
 
         if amount == Decimal(0):
             self._logger.log(
-                f'SKIPPING spot {message.symbol}',
+                f'SKIPPING {market_type} {message.symbol}',
                 body=Logger.join_contents(message.content, message.parent_content),
             )
             return
 
+        api: Api = self._futures_api if market_type == self.MARKET_TYPE_FUTURES else self._spot_api
+        self._futures_api.leverage = 1  # TODO
+
         if message.buy_type == BuyMessage.BUY_MARKET:
-            buy_order = self._api.market_buy(message.symbol, amount)
+            buy_order = api.market_buy(message.symbol, amount)
         elif message.buy_type == BuyMessage.BUY_LIMIT:
             assert message.buy_price is not None
-            buy_order = self._api.limit_buy(message.symbol, message.buy_price, amount)
+            buy_order = api.limit_buy(message.symbol, message.buy_price, amount)
         else:
             raise UnknownMessage()
 
@@ -66,47 +93,45 @@ class BombermanCoins:
             self._logger.log_message(
                 content=Logger.join_contents(message.content, message.parent_content),
                 parts=[
-                    f'Spot limit buy order created {buy_order.symbol}',
+                    f'{market_type} limit buy order created {buy_order.symbol}',
                     f'price: {buy_order.price}',
                 ],
             )
         elif buy_order.status == Order.STATUS_FILLED:
-            sleep(1)  # creating sell order directly after market buy is causing problems
-            self._api.oco_sell(message.symbol, buy_order.quantity, message.targets, message.stop_loss)
+            api.oco_sell(message.symbol, buy_order.quantity, message.targets, message.stop_loss)
             self._logger.log_message(
                 content=Logger.join_contents(message.content, message.parent_content),
                 parts=[
-                          f'Spot market bought {buy_order.symbol}',
+                          f'{market_type} market bought {buy_order.symbol}',
                           f'price: {buy_order.price}',
                       ] + self._get_oco_message_parts(message.targets, message.stop_loss),
             )
         else:
             raise Exception(f'Unknown order status {buy_order.status}')
 
-    def _spot_sell(self, message: SellMessage) -> None:
-        if message.sell_type == SellMessage.SELL_MARKET:
-            return self._spot_market_sell(message)
+    def _sell(self, market_type: str, message: SellMessage) -> None:
+        if message.sell_type != SellMessage.SELL_MARKET:
+            raise UnknownMessage()
 
-        raise UnknownMessage()
-
-    def _spot_market_sell(self, message: SellMessage) -> None:
-        symbol = message.symbol
-        oco_orders = self._api.get_oco_sell_orders(symbol)
-        assert len(oco_orders) != 0, 'None OCO sell orders found'
+        api: Api = self._futures_api if market_type == self.MARKET_TYPE_FUTURES else self._spot_api
+        oco_orders = api.get_oco_sell_orders(message.symbol)
+        assert len(oco_orders) != 0, f'None {market_type} OCO sell orders found'
         total_quantity = Decimal(0)
 
-        # cancel all oco orders
-        for oco_order, *_ in oco_orders:
-            self._api.cancel_order(symbol, oco_order.order_id)
-            total_quantity += oco_order.quantity
+        for orders in oco_orders:
+            total_quantity += orders[0].quantity
 
-        sell_order = self._api.market_sell(symbol, total_quantity)
+            for order in orders:
+                api.cancel_order(message.symbol, order.order_id)
+
+        sell_order = api.market_sell(message.symbol, total_quantity)
         self._logger.log_message('', [
-            f'Spot market sold {symbol}',
+            f'{market_type} market sold {message.symbol}',
             f'price: {sell_order.price}',
-        ] + self._get_profit_message_parts(symbol, total_quantity, sell_order.price))
+        ] + self._get_profit_message_parts(message.symbol, total_quantity, sell_order.price))
 
     def _process_limit_buy_order(self, api_order: Order) -> None:
+        # TODO test futures
         original_order = self._order_storage.get_order_by_symbol_and_order_id(api_order.symbol, api_order.order_id)
 
         if original_order is None:
@@ -116,8 +141,8 @@ class BombermanCoins:
         elif api_order.status == Order.STATUS_FILLED:
             buy_message = original_order.buy_message
             assert buy_message is not None
-            self._api.oco_sell(original_order.symbol, api_order.quantity, buy_message.targets,
-                               buy_message.stop_loss)
+            self._spot_api.oco_sell(original_order.symbol, api_order.quantity, buy_message.targets,
+                                    buy_message.stop_loss)
             self._logger.log_message(
                 content=Logger.join_contents(buy_message.content, buy_message.parent_content),
                 parts=[
@@ -128,6 +153,7 @@ class BombermanCoins:
             self._order_storage.remove(original_order)
 
     def _process_oco_sell_order(self, sell_order: Order) -> None:
+        # TODO test futures
         if sell_order.status != Order.STATUS_FILLED:
             return
 
@@ -138,7 +164,7 @@ class BombermanCoins:
         ] + self._get_profit_message_parts(sell_order.symbol, sell_order.quantity, sell_order.price))
 
     def _get_profit_message_parts(self, symbol: str, quantity: Decimal, sell_price: Decimal) -> List[str]:
-        buy_order = self._api.get_last_buy_order(symbol)
+        buy_order = self._spot_api.get_spot_last_buy_order(symbol)
 
         if buy_order is None or buy_order.quantity < quantity:
             return ['unknown profit']
