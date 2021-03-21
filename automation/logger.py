@@ -13,9 +13,10 @@ class Logger:
         self._email_user: str = email_user
         self._email_password: str = email_password
 
-    def log_message(self, content: str, parts: List[str]) -> None:
-        body = content + '\n\n' + '\n'.join(parts)
-        self.log(subject=', '.join(parts), body=body.strip())
+    def log_message(self, symbol: str, content: str, parts: List[str]) -> None:
+        link = f'https://www.binance.com/en/trade/{symbol}'
+        info = '\n'.join(parts)
+        self.log(subject=', '.join(parts), body=f'{content}\n\n{link}\n{info}'.strip())
 
     def log(self, subject: str, body: str) -> None:
         time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')

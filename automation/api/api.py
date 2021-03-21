@@ -34,14 +34,6 @@ class Api(ABC):
         pass
 
     @abstractmethod
-    def get_oco_sell_orders(self, symbol: str) -> List[List[Order]]:
-        pass
-
-    @abstractmethod
-    def cancel_order(self, symbol: str, order_id: int) -> None:
-        pass
-
-    @abstractmethod
     def get_symbol_info(self, symbol: str) -> SymbolInfo:
         pass
 

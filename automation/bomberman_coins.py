@@ -53,16 +53,15 @@ class BombermanCoins:
         if msg['e'] == 'executionReport':
             order_list_id = msg['g'] if msg['g'] != -1 else None
             order = Order(symbol=msg['s'], side=msg['S'], order_type=msg['o'], status=msg['X'], order_id=msg['i'],
-                          client_order_id=msg['c'], order_list_id=order_list_id,
-                          quantity=parse_decimal(msg['l']), price=parse_decimal(msg['L']), futures=False)
+                          order_list_id=order_list_id, quantity=parse_decimal(msg['l']), price=parse_decimal(msg['L']))
             self._process_message_order(order)
 
     def process_futures_message(self, message: Dict[str, Any]) -> None:
         if message['data']['e'] == 'ORDER_TRADE_UPDATE':
             msg = message['data']['o']
             order = Order(symbol=msg['s'], side=msg['S'], order_type=msg['o'], status=msg['X'], order_id=msg['i'],
-                          client_order_id=msg['c'], order_list_id=None, quantity=parse_decimal(msg['l']),
-                          price=parse_decimal(msg['L']), futures=True)
+                          order_list_id=None, quantity=parse_decimal(msg['l']), price=parse_decimal(msg['L']),
+                          futures=True, original_type=msg['ot'])
             self._process_message_order(order)
 
     def _get_market_type(self, symbol: str) -> str:
@@ -110,6 +109,7 @@ class BombermanCoins:
             self._order_storage.add_limit_order(buy_order)
 
             self._logger.log_message(
+                symbol=message.symbol,
                 content=Logger.join_contents(message.content, message.parent_content),
                 parts=[
                     f'{market_type} limit buy order created {message.symbol}',
@@ -119,6 +119,7 @@ class BombermanCoins:
         elif buy_order.status == Order.STATUS_FILLED:
             api.oco_sell(message.symbol, buy_order.quantity, message.targets, message.stop_loss)
             self._logger.log_message(
+                symbol=message.symbol,
                 content=Logger.join_contents(message.content, message.parent_content),
                 parts=[
                           f'{market_type} market bought {message.symbol}',
@@ -152,28 +153,28 @@ class BombermanCoins:
 
         return leverage
 
-    def _get_api(self, market_type: str) -> Api:
-        return self._futures_api if market_type == self.MARKET_TYPE_FUTURES else self._spot_api
-
     def _sell(self, market_type: str, message: SellMessage) -> None:
         if message.sell_type != SellMessage.SELL_MARKET:
             raise UnknownMessage()
 
+        if market_type == self.MARKET_TYPE_SPOT:
+            oco_orders = self._spot_api.get_oco_sell_orders(message.symbol)
+            assert len(oco_orders) != 0, f'None {market_type} OCO sell orders found'
+            total_quantity = Decimal(0)
+
+            for limit_maker, _ in oco_orders:
+                self._spot_api.cancel_order(limit_maker.symbol, limit_maker.order_id)
+                total_quantity += limit_maker.quantity
+        elif market_type == self.MARKET_TYPE_FUTURES:
+            total_quantity = self._futures_api.get_position_quantity(message.symbol)
+            assert total_quantity != Decimal(0), 'Empty position'
+        else:
+            raise Exception(f'Unknown market type {market_type}')
+
         api = self._get_api(market_type)
-        oco_orders = api.get_oco_sell_orders(message.symbol)
-        assert len(oco_orders) != 0, f'None {market_type} OCO sell orders found'
-        total_quantity = Decimal(0)
-
-        for orders in oco_orders:
-            total_quantity += orders[0].quantity
-
-            # for spot cancel just first order - another one will be canceled automatically by OCO
-            for order in orders[:1] if market_type == self.MARKET_TYPE_SPOT else orders:
-                api.cancel_order(message.symbol, order.order_id)
-
         sell_order = api.market_sell(message.symbol, total_quantity)
         symbol_info = api.get_symbol_info(message.symbol)
-        self._logger.log_message('', [
+        self._logger.log_message(symbol=message.symbol, content='', parts=[
             f'{market_type} market sold {message.symbol}',
             f'price: {round(sell_order.price, symbol_info.price_precision)}',
         ] + self._get_profit_message_parts(message.symbol, total_quantity, sell_order.price, api))
@@ -183,8 +184,16 @@ class BombermanCoins:
             if order.type == Order.TYPE_LIMIT:
                 self._process_limit_buy_order(order)
         elif order.side == Order.SIDE_SELL:
-            if order.type in (Order.TYPE_LIMIT_MAKER, Order.TYPE_STOP_LOSS_LIMIT):
+            if self._is_oco_sell(order):
                 self._process_oco_sell_order(order)
+
+    @staticmethod
+    def _is_oco_sell(order: Order) -> bool:
+        if order.futures:
+            return order.type == Order.TYPE_LIMIT or (order.type == Order.TYPE_MARKET
+                                                      and order.original_type == Order.TYPE_STOP_MARKET)
+        else:
+            return order.type in (Order.TYPE_LIMIT_MAKER, Order.TYPE_STOP_LOSS_LIMIT)
 
     def _process_limit_buy_order(self, api_order: Order) -> None:
         original_order = self._order_storage.get_order_by_symbol_and_order_id(api_order.symbol, api_order.order_id)
@@ -202,6 +211,7 @@ class BombermanCoins:
                                                 buy_message.stop_loss)
             symbol_info = self._spot_api.get_symbol_info(original_order.symbol)
             self._logger.log_message(
+                symbol=original_order.symbol,
                 content=Logger.join_contents(buy_message.content, buy_message.parent_content),
                 parts=[
                           f'{market_type} limit bought {original_order.symbol}',
@@ -215,17 +225,12 @@ class BombermanCoins:
         if sell_order.status != Order.STATUS_FILLED:
             return
 
-        if sell_order.futures:
-            market_type = self.MARKET_TYPE_FUTURES
-            self._futures_api.cancel_oco_orders(sell_order.symbol, sell_order.client_order_id)
-        else:
-            market_type = self.MARKET_TYPE_SPOT
-
-        typ = sell_order.type.lower().replace('_', ' ')
+        market_type = self.MARKET_TYPE_FUTURES if sell_order.futures else self.MARKET_TYPE_SPOT
+        typ = (sell_order.original_type or sell_order.type).replace('_', ' ').lower()
         api = self._get_api(market_type)
-        symbol_info = self._spot_api.get_symbol_info(sell_order.symbol)
-        self._logger.log_message('', [
-            f'{market_type} OCO {typ} sold {sell_order.symbol}',
+        symbol_info = api.get_symbol_info(sell_order.symbol)
+        self._logger.log_message(symbol=sell_order.symbol, content='', parts=[
+            f'{market_type} {typ} sold {sell_order.symbol}',
             f'price: {round(sell_order.price, symbol_info.price_precision)}',
         ] + self._get_profit_message_parts(sell_order.symbol, sell_order.quantity, sell_order.price, api))
 
@@ -239,9 +244,15 @@ class BombermanCoins:
         symbol_info = api.get_symbol_info(symbol)
 
         return [
-            f'profit: {diff / buy_order.price * 100:.2f}%',
+            f'profit: {diff / buy_order.price * 100:.2f} %',
             f'gain: {round(diff * quantity, symbol_info.price_precision)} {self._get_currency(symbol)}',
         ]
+
+    def _get_api(self, market_type: str) -> Api:
+        return {
+            self.MARKET_TYPE_FUTURES: self._futures_api,
+            self.MARKET_TYPE_SPOT: self._spot_api,
+        }[market_type]
 
     @staticmethod
     def _get_oco_message_parts(targets: List[Decimal], stop_loss: Decimal, price_precision: int) -> List[str]:

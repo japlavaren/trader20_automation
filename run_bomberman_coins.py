@@ -6,6 +6,7 @@ from binance.client import Client as BinanceClient
 from binance.websockets import BinanceSocketManager
 from discord import Client as DiscordClient, Message as DiscordMessage
 from twisted.internet import reactor
+from twisted.internet.error import ReactorNotRunning
 
 from automation.api.futures_api import FuturesApi
 from automation.api.spot_api import SpotApi
@@ -76,15 +77,18 @@ if __name__ == '__main__':
         except:
             logger.log('ERROR', traceback.format_exc())
 
+
     try:
         binance_socket.start_user_socket(process_spot_message)
-        # there is no method for listening future changes in binance socket manager
-        binance_socket._start_futures_socket(
-            binance_client._request_futures_api('post', 'listenKey')['listenKey'],
-            process_futures_message,
-        )
-        binance_socket.start()
 
+        if config['app']['market_type'] == BombermanCoins.MARKET_TYPE_FUTURES:
+            # there is no method for listening future changes in binance socket manager
+            binance_socket._start_futures_socket(
+                binance_client._request_futures_api('post', 'listenKey')['listenKey'],
+                process_futures_message,
+            )
+
+        binance_socket.start()
         discord_client.run(config['discord']['token'], bot=False)
     except KeyboardInterrupt:
         exit(0)
@@ -93,4 +97,8 @@ if __name__ == '__main__':
         exit(1)
     finally:
         binance_socket.close()
-        reactor.stop()  # type: ignore
+
+        try:
+            reactor.stop()  # type: ignore
+        except ReactorNotRunning:
+            pass
