@@ -13,7 +13,10 @@ class Order:
     TYPE_LIMIT = 'LIMIT'
     TYPE_LIMIT_MAKER = 'LIMIT_MAKER'
     TYPE_STOP_LOSS_LIMIT = 'STOP_LOSS_LIMIT'
-    _TYPES = (TYPE_MARKET, TYPE_LIMIT, TYPE_LIMIT_MAKER, TYPE_STOP_LOSS_LIMIT)
+    TYPE_TAKE_PROFIT_MARKET = 'TAKE_PROFIT_MARKET'
+    TYPE_STOP_MARKET = 'STOP_MARKET'
+    _TYPES = (TYPE_MARKET, TYPE_LIMIT, TYPE_LIMIT_MAKER, TYPE_STOP_LOSS_LIMIT, TYPE_TAKE_PROFIT_MARKET,
+              TYPE_STOP_MARKET)
 
     STATUS_NEW = 'NEW'
     STATUS_FILLED = 'FILLED'
@@ -22,7 +25,7 @@ class Order:
     STATUS_EXPIRED = 'EXPIRED'
     _STATUSES = (STATUS_NEW, STATUS_FILLED, STATUS_PARTIALLY_FILLED, STATUS_CANCELED, STATUS_EXPIRED)
 
-    def __init__(self, symbol: str, side: str, order_type: str, status: str, order_id: int,
+    def __init__(self, symbol: str, side: str, order_type: str, status: str, order_id: int, client_order_id: str,
                  order_list_id: Optional[int], quantity: Decimal, price: Decimal, futures: bool) -> None:
         assert side in (self.SIDE_BUY, self.SIDE_SELL), f'Got side {side}'
         assert order_type in self._TYPES, f'Got type {order_type}'
@@ -33,6 +36,7 @@ class Order:
         self.type: str = order_type
         self.status: str = status
         self.order_id: int = order_id
+        self.client_order_id: str = client_order_id
         self.order_list_id: Optional[int] = order_list_id
         self.quantity: Decimal = quantity
         self.price: Decimal = price
@@ -40,10 +44,10 @@ class Order:
         self.buy_message: Optional[BuyMessage] = None
 
     @staticmethod
-    def from_dict(values: Dict[str, Any], quantity_key: str, futures: bool = False) -> 'Order':
-        order_list_id = values['orderListId'] if values['orderListId'] != -1 else None
-        quantity = parse_decimal(values[quantity_key])
-        price = parse_decimal(values['price'])
+    def from_dict(values: Dict[str, Any], quantity_key: str, price_key: str = 'price', futures: bool = False,
+                  ) -> 'Order':
+        order_list_id = values['orderListId'] if values.get('orderListId', -1) != -1 else None
 
         return Order(values['symbol'], values['side'], values['type'], values['status'], values['orderId'],
-                     order_list_id, quantity, price, futures)
+                     values['clientOrderId'], order_list_id, quantity=parse_decimal(values[quantity_key]),
+                     price=parse_decimal(values[price_key]), futures=futures)

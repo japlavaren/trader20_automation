@@ -1,12 +1,12 @@
 from decimal import Decimal
-from time import time
-from typing import Dict, List, Optional, Set
+from time import sleep
+from typing import Dict, List, Optional
 from uuid import uuid4
 
 from binance.client import Client
 from binance.exceptions import BinanceAPIException
 
-from automation.api.api import Api, Precision
+from automation.api.api import Api, SymbolInfo
 from automation.functions import parse_decimal
 from automation.order import Order
 
@@ -15,6 +15,9 @@ class FuturesApi(Api):
     MARGIN_TYPE_ISOLATED = 'ISOLATED'
     MARGIN_TYPE_CROSS = 'CROSS'
 
+    _OCO_STOP_MARKET = 'OCO-SM'
+    _OCO_TAKE_PROFIT_MARKET = 'OCO-TPM'
+
     _NO_NEED_TO_CHANGE_MARGIN = -4046
 
     def __init__(self, margin_type: str, client: Client) -> None:
@@ -22,8 +25,7 @@ class FuturesApi(Api):
         super().__init__(client)
         self._margin_type: str = margin_type
         self._leverage: Optional[int] = None
-        self._precisions: Dict[str, Precision] = {}
-        self._futures_symbols: Set[str] = set()
+        self._symbol_infos: Dict[str, SymbolInfo] = {}
 
     @property
     def leverage(self) -> int:
@@ -34,50 +36,54 @@ class FuturesApi(Api):
 
     @leverage.setter
     def leverage(self, leverage: int):
-        self.leverage = leverage
+        self._leverage = leverage
 
-    @property
-    def futures_symbols(self) -> Set[str]:
-        if len(self._futures_symbols) == 0:
+    def is_futures(self, symbol: str) -> bool:
+        if len(self._symbol_infos) == 0:
             info = self._client.futures_exchange_info()
 
             for symbol_info in info['symbols']:
-                symbol = symbol_info['symbol']
-                self._futures_symbols.add(symbol)
-                self._precisions[symbol] = Precision(int(symbol_info['quantityPrecision']),
-                                                     int(symbol_info['pricePrecision']))
+                min_notional = [parse_decimal(f['notional']) for f in symbol_info['filters']
+                                if f['filterType'] == 'MIN_NOTIONAL'][0]
+                self._symbol_infos[symbol_info['symbol']] = SymbolInfo(int(symbol_info['quantityPrecision']),
+                                                                       int(symbol_info['pricePrecision']),
+                                                                       min_notional)
 
-        return self._futures_symbols
+        return symbol in self._symbol_infos.keys()
 
     def market_buy(self, symbol: str, amount: Decimal) -> Order:
+        self._check_has_orders(symbol)
         self._set_futures_settings(symbol, self.leverage)
-        precision = self.get_precision(symbol)
-        price = self._get_current_price(symbol)
-        quantity = self._round(amount / price, precision.quantity)
+        symbol_info = self.get_symbol_info(symbol)
+        price = self.get_current_price(symbol)
+        quantity = self._round(amount / price, symbol_info.quantity_precision)
         info = self._client.futures_create_order(
             side=Client.SIDE_BUY,
             type=Client.ORDER_TYPE_MARKET,
-            symbol=self._normalize_symbol(symbol),
+            symbol=symbol,
             quantity=quantity,
-            timestamp=self._timestamp,
         )
-        order = Order.from_dict(info, quantity_key='executedQty', futures=True)
-        a = 1  # TODO check price is not zero
+
+        if info['status'] != Order.STATUS_FILLED:
+            sleep(1)
+            info = self._client.futures_get_order(symbol=info['symbol'], orderId=info['orderId'])
+
+        order = Order.from_dict(info, quantity_key='executedQty', price_key='avgPrice', futures=True)
         assert order.status == Order.STATUS_FILLED
 
         return order
 
     def limit_buy(self, symbol: str, price: Decimal, amount: Decimal) -> Order:
+        self._check_has_orders(symbol)
         self._set_futures_settings(symbol, self.leverage)
-        precision = self.get_precision(symbol)
-        quantity = self._round(amount / price, precision.quantity)
+        symbol_info = self.get_symbol_info(symbol)
+        quantity = self._round(amount / price, symbol_info.quantity_precision)
         info = self._client.futures_create_order(
             side=Client.SIDE_BUY,
             type=Client.ORDER_TYPE_LIMIT,
-            symbol=self._normalize_symbol(symbol),
+            symbol=symbol,
             price=price,
             quantity=quantity,
-            timestamp=self._timestamp,
             timeInForce=Client.TIME_IN_FORCE_GTC,
         )
         quantity_key = 'executedQty' if info['status'] == Order.STATUS_FILLED else 'origQty'
@@ -90,78 +96,134 @@ class FuturesApi(Api):
         info = self._client.futures_create_order(
             side=Client.SIDE_SELL,
             type=Client.ORDER_TYPE_MARKET,
-            symbol=self._normalize_symbol(symbol),
+            symbol=symbol,
             quantity=quantity,
-            timestamp=self._timestamp,
         )
-        order = Order.from_dict(info, quantity_key='executedQty', futures=True)
-        a = 1  # TODO check price is not zero
+
+        if info['status'] != Order.STATUS_FILLED:
+            sleep(1)
+            info = self._client.futures_get_order(symbol=info['symbol'], orderId=info['orderId'])
+
+        order = Order.from_dict(info, quantity_key='executedQty', price_key='avgPrice', futures=True)
         assert order.status == Order.STATUS_FILLED
 
         return order
 
     def oco_sell(self, symbol: str, quantity: Decimal, targets: List[Decimal], stop_loss: Decimal) -> None:
-        precision = self.get_precision(symbol)
-        stop_price = self._round(stop_loss, precision.price)
+        symbol_info = self.get_symbol_info(symbol)
+        quantities = self._get_target_quantities(quantity, len(targets), symbol_info.quantity_precision)
 
-        for price, quantity in zip(targets, self._get_target_quantities(quantity, len(targets), precision)):
-            client_order_id = uuid4().hex
-            self._stop_market(client_order_id, symbol, quantity, stop_price)
-            self._take_profit_market(client_order_id, symbol, quantity, price)
+        for price, quantity in zip(targets, quantities):
+            identifier = uuid4().hex[:20]
+            self._stop(identifier, symbol, quantity, stop_loss)
+            self._take_profit(identifier, symbol, quantity, price)
 
-    def _stop_market(self, client_order_id: str, symbol: str, quantity: Decimal, stop_price: Decimal) -> None:
+    def _stop(self, identifier: str, symbol: str, quantity: Decimal, stop_loss: Decimal) -> None:
+        symbol_info = self.get_symbol_info(symbol)
+        stop_price = self._round(stop_loss * (1 + self._STOP_PRICE_CORRECTION), symbol_info.price_precision)  # +0.5%
         info = self._client.futures_create_order(
-            newClientOrderId=client_order_id,
+            newClientOrderId=f'{self._OCO_STOP_MARKET}-{identifier}',
             side=Client.SIDE_SELL,
-            type='STOP_MARKET',
-            symbol=self._normalize_symbol(symbol),
+            type=Order.TYPE_STOP,
+            symbol=symbol,
             quantity=quantity,
             stopPrice=stop_price,
+            price=stop_loss,
         )
-        a = 1  # TODO assert state
+        assert info['status'] == Order.STATUS_NEW
 
-    def _take_profit_market(self, client_order_id: str, symbol: str, quantity: Decimal, price: Decimal) -> None:
+    def _take_profit(self, identifier: str, symbol: str, quantity: Decimal, price: Decimal) -> None:
+        symbol_info = self.get_symbol_info(symbol)
+        stop_price = self._round(price / (1 + self._STOP_PRICE_CORRECTION), symbol_info.price_precision)  # -0.5%
         info = self._client.futures_create_order(
-            newClientOrderId=client_order_id,
+            newClientOrderId=f'{self._OCO_TAKE_PROFIT_MARKET}-{identifier}',
             side=Client.SIDE_SELL,
-            type='TAKE_PROFIT_MARKET',
-            symbol=self._normalize_symbol(symbol),
+            type=Order.TYPE_TAKE_PROFIT,
+            symbol=symbol,
             quantity=quantity,
-            stopPrice=price,
+            stopPrice=stop_price,
+            price=price,
         )
-        a = 1  # TODO assert state
+        assert info['status'] == Order.STATUS_NEW
 
     def get_oco_sell_orders(self, symbol: str) -> List[List[Order]]:
-        raise NotImplementedError()
-        # o = self._client.futures_get_open_orders(symbol=self._normalize_symbol(symbol))
-        # a=1
+        all_orders = [Order.from_dict(info, quantity_key='origQty', price_key='stopPrice', futures=True)
+                      for info in self._client.futures_get_open_orders(symbol=symbol)]
+        all_orders.sort(key=lambda o: o.type, reverse=True)
+        grouped_filtered: Dict[str, List[Order]] = {}
+
+        for order in all_orders:
+            if self._is_oco_sell_order(order):
+                key = order.client_order_id.replace(self._OCO_TAKE_PROFIT_MARKET, '').replace(self._OCO_STOP_MARKET, '')
+                grouped_filtered.setdefault(key, []).append(order)
+
+        oco_orders = list(grouped_filtered.values())
+        oco_types = [Order.TYPE_TAKE_PROFIT_MARKET, Order.TYPE_STOP_MARKET]
+
+        for orders in oco_orders:
+            assert [order.type for order in orders] == oco_types
+
+        return oco_orders
+
+    def cancel_oco_orders(self, symbol, client_order_id: str) -> None:
+        all_orders = [Order.from_dict(info, quantity_key='origQty', price_key='stopPrice', futures=True)
+                      for info in self._client.futures_get_open_orders(symbol=symbol)]
+        identifier = client_order_id.replace(self._OCO_TAKE_PROFIT_MARKET, '').replace(self._OCO_STOP_MARKET, '')
+
+        for order in all_orders:
+            if order.client_order_id.endswith(identifier):
+                self.cancel_order(order.symbol, order.order_id)
 
     def cancel_order(self, symbol: str, order_id: int) -> None:
-        raise NotImplementedError()
+        info = self._client.futures_cancel_order(symbol=symbol, orderId=order_id)
+        assert info['status'] == Order.STATUS_CANCELED
 
     def get_last_buy_order(self, symbol: str) -> Optional[Order]:
-        raise NotImplementedError()
+        api_orders = self._client.futures_get_all_orders(symbol=symbol)
+        api_orders.sort(key=lambda o: o['updateTime'], reverse=True)
 
-    @property
-    def _timestamp(self) -> int:
-        return int(time() * 1000)
+        for api_order in api_orders:
+            if api_order['side'] == Order.SIDE_BUY and api_order['status'] == Order.STATUS_FILLED:
+                return Order.from_dict(api_order, quantity_key='executedQty', price_key='avgPrice', futures=True)
+        else:
+            return None
+
+    def get_available_balance(self, currency: str) -> Decimal:
+        # client futures_account_balance() is pointing to v1 and we need v2 call
+        uri = self._client._create_futures_api_uri('balance').replace('v1', 'v2')
+        info = self._client._request('get', uri, signed=True, data={})
+        balances = [parse_decimal(balance['availableBalance']) for balance in info if balance['asset'] == currency]
+        assert len(balances) == 1
+
+        return balances[0]
+
+    def get_symbol_info(self, symbol: str) -> SymbolInfo:
+        return self._symbol_infos[symbol]
+
+    @classmethod
+    def _is_oco_sell_order(cls, order: Order) -> bool:
+        return (order.side == Order.SIDE_SELL and order.status == Order.STATUS_NEW
+                and order.type in (Order.TYPE_TAKE_PROFIT_MARKET, Order.TYPE_STOP_MARKET)
+                and (order.client_order_id.startswith(cls._OCO_TAKE_PROFIT_MARKET)
+                     or order.client_order_id.startswith(cls._OCO_STOP_MARKET)))
+
+    def _check_has_orders(self, symbol: str) -> None:
+        open_orders = self._client.futures_get_open_orders(symbol=symbol)
+        assert len(open_orders) == 0, f'{symbol} has open future order'
+        assert self._has_none_open_position(symbol), f'{symbol} has open future position'
 
     def _set_futures_settings(self, symbol: str, leverage: int) -> None:
         try:
-            self._client.futures_change_margin_type(symbol=self._normalize_symbol(symbol), marginType=self._margin_type)
+            self._client.futures_change_margin_type(symbol=symbol, marginType=self._margin_type)
         except BinanceAPIException as e:
             if e.code != self._NO_NEED_TO_CHANGE_MARGIN:
                 raise
 
-        self._client.futures_change_leverage(symbol=self._normalize_symbol(symbol), leverage=leverage)
+        self._client.futures_change_leverage(symbol=symbol, leverage=leverage)
 
-    def _get_current_price(self, symbol: str) -> Decimal:
-        info = self._client.get_symbol_ticker(symbol=self._normalize_symbol(symbol))
+    def _has_none_open_position(self, symbol: str) -> bool:
+        open_positions = self._client.futures_position_information(symbol=symbol)
 
-        return parse_decimal(info['price'])
-
-    def get_precision(self, symbol: str) -> Precision:
-        if len(self._precisions) == 0:
-            _ = self.futures_symbols  # load symbols and precisions
-
-        return self._precisions[symbol]
+        # there can be always one open position with zero positionAmt and notional even if there is no position open
+        return (len(open_positions) == 0 or (len(open_positions) == 1 and open_positions[0]['positionAmt'] == '0.0'
+                                             and open_positions[0]['notional'] == '0'))

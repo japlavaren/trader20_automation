@@ -37,19 +37,20 @@ if __name__ == '__main__':
                                      config['app']['spot']['trade_amount'],
                                      config['app']['futures']['trade_amount'],
                                      config['app']['futures']['leverage'],
+                                     config['app']['futures']['max_leverage'],
                                      spot_api, futures_api, order_storage, logger)
+    test_user = config['discord']['test_user']
+    discord_channel = config['discord']['channel']
 
 
     @discord_client.event
     async def on_message(message: DiscordMessage) -> None:
-        if config['discord']['test_user'] is not None and str(message.author) != config['discord']['test_user']:
-            return
-
-        content = ''
-        parent_content = None
+        content, parent_content = '', None
 
         try:
-            if message.channel.id == config['discord']['channel']:
+            if test_user is not None and str(message.author) != test_user:
+                return
+            if message.channel.id == discord_channel:
                 content = message.content
 
                 if message.reference is not None and message.reference.resolved is not None:
@@ -74,7 +75,6 @@ if __name__ == '__main__':
             bomberman_coins.process_futures_message(msg)
         except:
             logger.log('ERROR', traceback.format_exc())
-
 
     try:
         binance_socket.start_user_socket(process_spot_message)
