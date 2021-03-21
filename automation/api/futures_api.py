@@ -161,8 +161,10 @@ class FuturesApi(Api):
     def _check_has_no_positions(self, symbol: str) -> None:
         open_positions = self._client.futures_position_information(symbol=symbol)
         # there is always one position with zero values
-        assert (len(open_positions) == 1 and open_positions[0]['positionAmt'] == '0.0'
-                and open_positions[0]['notional'] == '0'), f'{symbol} has open future position'
+        assert len(open_positions) == 1
+        position_amount = parse_decimal(open_positions[0]['positionAmt'])
+        notional = parse_decimal(open_positions[0]['notional'])
+        assert position_amount == Decimal(0.0) and notional == Decimal(0.0), f'{symbol} has open future position'
 
     def _set_futures_settings(self, symbol: str, leverage: int) -> None:
         try:
