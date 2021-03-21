@@ -39,8 +39,8 @@ if __name__ == '__main__':
                                      config['app']['futures']['leverage'],
                                      config['app']['futures']['max_leverage'],
                                      spot_api, futures_api, order_storage, logger)
-    test_user = config['discord']['test_user']
     discord_channel = config['discord']['channel']
+    test_user = config['discord'].get('test_user')
 
 
     @discord_client.event
