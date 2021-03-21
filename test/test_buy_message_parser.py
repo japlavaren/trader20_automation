@@ -15,7 +15,7 @@ class TestBuyMessageParser(TestCase):
             Stoploss : 260
         '''
         msg = BuyMessageParser.parse(content, parent_content=None)
-        self.assertEqual(msg.symbol, 'IRIS/BTC')
+        self.assertEqual(msg.symbol, 'IRISBTC')
         self.assertEqual(msg.buy_type, BuyMessage.BUY_LIMIT)
         self.assertEqual(msg.buy_price, Decimal('281'))
         self.assertEqual(msg.targets, [Decimal('310'), Decimal('332')])
@@ -30,7 +30,7 @@ class TestBuyMessageParser(TestCase):
             Stoploss : 0.9145 /-15.85%/
         '''
         msg = BuyMessageParser.parse(content, parent_content=None)
-        self.assertEqual(msg.symbol, '1INCH/USDT')
+        self.assertEqual(msg.symbol, '1INCHUSDT')
         self.assertEqual(msg.buy_type, BuyMessage.BUY_LIMIT)
         self.assertEqual(msg.buy_price, Decimal('1.0867'))
         self.assertEqual(msg.targets, [Decimal('1.3546'), Decimal('1.5412')])
@@ -44,7 +44,7 @@ class TestBuyMessageParser(TestCase):
             Stoploss : 208 /-12,55%/
         '''
         msg = BuyMessageParser.parse(content, parent_content=None)
-        self.assertEqual(msg.symbol, 'BLZ/BTC')
+        self.assertEqual(msg.symbol, 'BLZBTC')
         self.assertEqual(msg.buy_type, BuyMessage.BUY_LIMIT)
         self.assertEqual(msg.buy_price, Decimal('238'))
         self.assertEqual(msg.targets, [Decimal('287')])
@@ -59,7 +59,7 @@ class TestBuyMessageParser(TestCase):
             Stoploss : 0.85 /-14.97%/
         '''
         msg = BuyMessageParser.parse(content, parent_content=None)
-        self.assertEqual(msg.symbol, 'OCEAN/USDT')
+        self.assertEqual(msg.symbol, 'OCEANUSDT')
         self.assertEqual(msg.buy_type, BuyMessage.BUY_MARKET)
         self.assertIsNone(msg.buy_price)
         self.assertEqual(msg.targets, [Decimal('1.16'), Decimal('1.29')])
@@ -73,7 +73,7 @@ class TestBuyMessageParser(TestCase):
             Stoploss : 59.156 /12.14%/
         '''
         msg = BuyMessageParser.parse(content, parent_content=None)
-        self.assertEqual(msg.symbol, 'KSM/USDT')
+        self.assertEqual(msg.symbol, 'KSMUSDT')
         self.assertEqual(msg.buy_type, BuyMessage.BUY_MARKET)
         self.assertIsNone(msg.buy_price)
         self.assertEqual(msg.targets, [Decimal('76.81')])
@@ -87,7 +87,7 @@ class TestBuyMessageParser(TestCase):
             Stop Loss: 0.988/16%/
         '''
         msg = BuyMessageParser.parse(content, parent_content=None)
-        self.assertEqual(msg.symbol, 'ALGO/USDT')
+        self.assertEqual(msg.symbol, 'ALGOUSDT')
         self.assertEqual(msg.buy_type, BuyMessage.BUY_MARKET)
         self.assertEqual(msg.targets, [Decimal('1.708')])
         self.assertEqual(msg.stop_loss, Decimal('0.988'))
@@ -100,7 +100,7 @@ class TestBuyMessageParser(TestCase):
             2. target : 9.10 /-11.05%/
         '''
         msg = BuyMessageParser.parse(content, parent_content=None)
-        self.assertEqual(msg.symbol, 'WAVES/USDT')
+        self.assertEqual(msg.symbol, 'WAVESUSDT')
         self.assertEqual(msg.buy_type, BuyMessage.BUY_MARKET)
         self.assertEqual(msg.targets, [Decimal('11.68')])
         self.assertEqual(msg.stop_loss, Decimal('9.1'))
