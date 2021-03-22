@@ -36,4 +36,7 @@ stdout_logfile=/var/python/trader20_automation/log/supervisor.out.log
 
 ## Donate
 
-I made this project for myself, but if it is solving your problem [consider donation](https://revolut.me/jakub20w6)
+I made this project for myself, but if it is solving your problem consider donation:
+- ETH BEP20: 0xa51eeabe839542620302c8d4218f49310f137a23
+- BNB BEP20: 0xa51eeabe839542620302c8d4218f49310f137a23
+- [Revolut](https://revolut.me/jakub20w6)
