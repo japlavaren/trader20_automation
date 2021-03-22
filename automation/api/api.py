@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from collections import namedtuple
 from decimal import Decimal
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from binance.client import Client
 
@@ -38,7 +38,7 @@ class Api(ABC):
         pass
 
     @abstractmethod
-    def get_last_buy_order(self, symbol: str) -> Optional[Order]:
+    def get_pnl(self, sell_order: Order) -> Optional[Decimal]:
         pass
 
     def get_current_price(self, symbol: str) -> Decimal:
@@ -46,24 +46,36 @@ class Api(ABC):
 
         return parse_decimal(info['price'])
 
-    def check_min_notional(self, symbol: str, buy_price: Optional[Decimal], trade_amount: Decimal,
+    def check_min_notional(self, symbol: str, buy_price: Optional[Decimal], amount: Decimal,
                            targets: List[Decimal], stop_loss: Decimal, futures: bool) -> None:
+        target_amounts, stop_loss_amount = self.get_buy_order_amounts(symbol, amount, buy_price, targets, stop_loss,
+                                                                      futures)
+        min_notional = self.get_symbol_info(symbol).min_notional
+        assert stop_loss_amount > min_notional, 'Trade amount is too small for stop loss'
+
+        for target_amount in target_amounts:
+            assert target_amount > min_notional, 'Trade amount is too small for target'
+
+    def get_buy_order_amounts(self, symbol: str, amount: Decimal, buy_price: Optional[Decimal], targets: List[Decimal],
+                              stop_loss: Decimal, futures: bool) -> Tuple[List[Decimal], Decimal]:
         if buy_price is None:
             buy_price = self.get_current_price(symbol)
 
         symbol_info = self.get_symbol_info(symbol)
-        quantity = self._round(trade_amount / buy_price, symbol_info.quantity_precision)
-        target_quantity = self._round(quantity / len(targets), symbol_info.quantity_precision)
-        min_notional = self.get_symbol_info(symbol).min_notional
+        total_quantity = self._round(amount / buy_price, symbol_info.quantity_precision)
+        target_quantities = self._get_target_quantities(total_quantity, len(targets), symbol_info.quantity_precision)
+        target_amounts = [self._round(target * quantity, symbol_info.price_precision)
+                          for target, quantity in zip(targets, target_quantities)]
 
-        for target in targets:
-            target_amount = target_quantity * target
-            assert target_amount > min_notional, 'Trade amount is too small for target'
+        if futures:
+            # for futures there is one stop order which close all position
+            stop_loss_amount = self._round(total_quantity * stop_loss, symbol_info.price_precision)
+        else:
+            # for spot there is stop OCO order for every target
+            stop_loss_amount = min([self._round(stop_loss * quantity, symbol_info.price_precision)
+                                    for quantity in target_quantities])
 
-        # for spot is OCO order for each target
-        stop_loss_quantity = self._round(quantity if futures else target_quantity, symbol_info.quantity_precision)
-        stop_loss_amount = stop_loss_quantity * stop_loss
-        assert stop_loss_amount > min_notional, 'Trade amount is too small for stop loss'
+        return target_amounts, stop_loss_amount
 
     @classmethod
     def _get_target_quantities(cls, total_quantity: Decimal, targets_count: int, quantity_precision: int,

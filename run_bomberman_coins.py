@@ -57,35 +57,35 @@ if __name__ == '__main__':
                 if message.reference is not None and message.reference.resolved is not None:
                     parent_content = message.reference.resolved.content
 
-                bomberman_coins.process(content, parent_content)
+                bomberman_coins.process_channel_message(content, parent_content)
         except UnknownMessage:
             logger.log('UNKNOWN MESSAGE', Logger.join_contents(content, parent_content))
         except:
             logger.log('ERROR', Logger.join_contents(content, parent_content) + '\n\n' + traceback.format_exc())
 
 
-    def process_spot_message(msg: Dict[str, Any]) -> None:
+    def process_api_spot_message(msg: Dict[str, Any]) -> None:
         try:
-            bomberman_coins.process_spot_message(msg)
+            bomberman_coins.process_api_spot_message(msg)
         except:
             logger.log('ERROR', traceback.format_exc())
 
 
-    def process_futures_message(msg: Dict[str, Any]) -> None:
+    def process_api_futures_message(msg: Dict[str, Any]) -> None:
         try:
-            bomberman_coins.process_futures_message(msg)
+            bomberman_coins.process_api_futures_message(msg)
         except:
             logger.log('ERROR', traceback.format_exc())
 
 
     try:
-        binance_socket.start_user_socket(process_spot_message)
+        binance_socket.start_user_socket(process_api_spot_message)
 
         if config['app']['market_type'] == BombermanCoins.MARKET_TYPE_FUTURES:
             # there is no method for listening future changes in binance socket manager
             binance_socket._start_futures_socket(
                 binance_client._request_futures_api('post', 'listenKey')['listenKey'],
-                process_futures_message,
+                process_api_futures_message,
             )
 
         binance_socket.start()

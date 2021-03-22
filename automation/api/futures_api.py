@@ -34,7 +34,7 @@ class FuturesApi(Api):
     def leverage(self, leverage: int):
         self._leverage = leverage
 
-    def is_futures(self, symbol: str) -> bool:
+    def is_symbol_futures(self, symbol: str) -> bool:
         self._load_symbol_infos()
 
         return symbol in self._symbol_infos.keys()
@@ -97,46 +97,13 @@ class FuturesApi(Api):
 
     def oco_sell(self, symbol: str, quantity: Decimal, targets: List[Decimal], stop_loss: Decimal) -> None:
         symbol_info = self.get_symbol_info(symbol)
-        self._stop_market(symbol, stop_loss)
+        self._stop_market_sell(symbol, stop_loss)
         quantities = self._get_target_quantities(quantity, len(targets), symbol_info.quantity_precision)
 
         for price, quantity in zip(targets, quantities):
-            self._limit(symbol, quantity, price)
+            self._limit_sell(symbol, quantity, price)
 
-    def _stop_market(self, symbol: str, stop_loss: Decimal) -> None:
-        info = self._client.futures_create_order(
-            side=Order.SIDE_SELL,
-            type=Order.TYPE_STOP_MARKET,
-            symbol=symbol,
-            stopPrice=stop_loss,
-            closePosition=True,
-            timeInForce='GTE_GTC',
-        )
-        assert info['status'] == Order.STATUS_NEW
-
-    def _limit(self, symbol: str, quantity: Decimal, price: Decimal) -> None:
-        info = self._client.futures_create_order(
-            side=Order.SIDE_SELL,
-            type=Order.TYPE_LIMIT,
-            symbol=symbol,
-            price=price,
-            quantity=quantity,
-            reduceOnly=True,
-            timeInForce=Client.TIME_IN_FORCE_GTC,
-        )
-        assert info['status'] == Order.STATUS_NEW
-
-    def get_last_buy_order(self, symbol: str) -> Optional[Order]:
-        api_orders = self._client.futures_get_all_orders(symbol=symbol)
-        api_orders.sort(key=lambda o: o['updateTime'], reverse=True)
-
-        for info in api_orders:
-            if info['side'] == Order.SIDE_BUY and info['status'] == Order.STATUS_FILLED:
-                return Order.from_dict(info, quantity_key='executedQty', price_key='avgPrice', futures=True)
-        else:
-            return None
-
-    def get_position_quantity(self, symbol: str) -> Decimal:
+    def get_open_position_quantity(self, symbol: str) -> Decimal:
         info = self._client.futures_position_information(symbol=symbol)
         assert len(info) == 1
 
@@ -151,11 +118,6 @@ class FuturesApi(Api):
 
         return balances[0]
 
-    def get_symbol_info(self, symbol: str) -> SymbolInfo:
-        self._load_symbol_infos()
-
-        return self._symbol_infos[symbol]
-
     def has_open_position(self, symbol: str) -> bool:
         open_positions = self._client.futures_position_information(symbol=symbol)
         # there is always one position with zero values
@@ -163,6 +125,43 @@ class FuturesApi(Api):
         position_amount = parse_decimal(open_positions[0]['positionAmt'])
 
         return position_amount != Decimal(0)
+
+    def get_symbol_info(self, symbol: str) -> SymbolInfo:
+        self._load_symbol_infos()
+
+        return self._symbol_infos[symbol]
+
+    def get_pnl(self, sell_order: Order) -> Optional[Decimal]:
+        assert sell_order.side == Order.SIDE_SELL
+        assert sell_order.status == Order.STATUS_FILLED
+        trades = self._client.futures_account_trades(symbol=sell_order.symbol)
+        pln = [parse_decimal(info['realizedPnl']) for info in trades
+               if info['orderId'] == sell_order.order_id]
+
+        return pln[0] if len(pln) != 0 else None
+
+    def _stop_market_sell(self, symbol: str, stop_loss: Decimal) -> None:
+        info = self._client.futures_create_order(
+            side=Order.SIDE_SELL,
+            type=Order.TYPE_STOP_MARKET,
+            symbol=symbol,
+            stopPrice=stop_loss,
+            closePosition=True,
+            timeInForce='GTE_GTC',
+        )
+        assert info['status'] == Order.STATUS_NEW
+
+    def _limit_sell(self, symbol: str, quantity: Decimal, price: Decimal) -> None:
+        info = self._client.futures_create_order(
+            side=Order.SIDE_SELL,
+            type=Order.TYPE_LIMIT,
+            symbol=symbol,
+            price=price,
+            quantity=quantity,
+            reduceOnly=True,
+            timeInForce=Client.TIME_IN_FORCE_GTC,
+        )
+        assert info['status'] == Order.STATUS_NEW
 
     def _set_futures_settings(self, symbol: str, leverage: int) -> None:
         try:
