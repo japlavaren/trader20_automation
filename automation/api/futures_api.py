@@ -40,7 +40,6 @@ class FuturesApi(Api):
         return symbol in self._symbol_infos.keys()
 
     def market_buy(self, symbol: str, amount: Decimal) -> Order:
-        self._check_has_no_positions(symbol)
         self._set_futures_settings(symbol, self.leverage)
         symbol_info = self.get_symbol_info(symbol)
         price = self.get_current_price(symbol)
@@ -62,7 +61,6 @@ class FuturesApi(Api):
         return order
 
     def limit_buy(self, symbol: str, price: Decimal, amount: Decimal) -> Order:
-        self._check_has_no_positions(symbol)
         self._set_futures_settings(symbol, self.leverage)
         symbol_info = self.get_symbol_info(symbol)
         quantity = self._round(amount / price, symbol_info.quantity_precision)
@@ -158,13 +156,13 @@ class FuturesApi(Api):
 
         return self._symbol_infos[symbol]
 
-    def _check_has_no_positions(self, symbol: str) -> None:
+    def has_open_position(self, symbol: str) -> bool:
         open_positions = self._client.futures_position_information(symbol=symbol)
         # there is always one position with zero values
         assert len(open_positions) == 1
         position_amount = parse_decimal(open_positions[0]['positionAmt'])
-        notional = parse_decimal(open_positions[0]['notional'])
-        assert position_amount == Decimal(0.0) and notional == Decimal(0.0), f'{symbol} has open future position'
+
+        return position_amount != Decimal(0)
 
     def _set_futures_settings(self, symbol: str, leverage: int) -> None:
         try:

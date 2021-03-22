@@ -46,15 +46,24 @@ class Api(ABC):
 
         return parse_decimal(info['price'])
 
-    def check_min_notional(self, symbol: str, buy_price: Optional[Decimal], trade_amount: Decimal, targets_count: int,
-                           stop_loss: Decimal) -> None:
+    def check_min_notional(self, symbol: str, buy_price: Optional[Decimal], trade_amount: Decimal,
+                           targets: List[Decimal], stop_loss: Decimal, futures: bool) -> None:
         if buy_price is None:
             buy_price = self.get_current_price(symbol)
 
-        target_quantity = trade_amount / buy_price / targets_count
-        stop_loss_amount = target_quantity * stop_loss
+        symbol_info = self.get_symbol_info(symbol)
+        quantity = self._round(trade_amount / buy_price, symbol_info.quantity_precision)
+        target_quantity = self._round(quantity / len(targets), symbol_info.quantity_precision)
+        min_notional = self.get_symbol_info(symbol).min_notional
 
-        assert stop_loss_amount > self.get_symbol_info(symbol).min_notional, 'Trade amount is too small for stop loss'
+        for target in targets:
+            target_amount = target_quantity * target
+            assert target_amount > min_notional, 'Trade amount is too small for target'
+
+        # for spot is OCO order for each target
+        stop_loss_quantity = self._round(quantity if futures else target_quantity, symbol_info.quantity_precision)
+        stop_loss_amount = stop_loss_quantity * stop_loss
+        assert stop_loss_amount > min_notional, 'Trade amount is too small for stop loss'
 
     @classmethod
     def _get_target_quantities(cls, total_quantity: Decimal, targets_count: int, quantity_precision: int,
