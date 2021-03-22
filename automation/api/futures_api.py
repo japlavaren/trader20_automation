@@ -38,7 +38,7 @@ class FuturesApi(Api):
         return symbol in self._symbol_infos.keys()
 
     def market_buy(self, symbol: str, amount: Decimal) -> Order:
-        self._set_futures_settings(symbol, self.leverage)
+        self._set_buy_futures_settings(symbol, self.leverage)
         symbol_info = self.get_symbol_info(symbol)
         price = self.get_current_price(symbol)
         quantity = self._round(amount / price, symbol_info.quantity_precision)
@@ -59,7 +59,7 @@ class FuturesApi(Api):
         return order
 
     def limit_buy(self, symbol: str, price: Decimal, amount: Decimal) -> Order:
-        self._set_futures_settings(symbol, self.leverage)
+        self._set_buy_futures_settings(symbol, self.leverage)
         symbol_info = self.get_symbol_info(symbol)
         quantity = self._round(amount / price, symbol_info.quantity_precision)
         info = self._client.futures_create_order(
@@ -158,7 +158,7 @@ class FuturesApi(Api):
         )
         assert info['status'] == Order.STATUS_NEW, f'Got {info["status"]} status'
 
-    def _set_futures_settings(self, symbol: str, leverage: int) -> None:
+    def _set_buy_futures_settings(self, symbol: str, leverage: int) -> None:
         assert not self.has_open_position(symbol), 'Has open position'
 
         try:

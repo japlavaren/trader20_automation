@@ -21,12 +21,13 @@ class Order:
     STATUS_FILLED = 'FILLED'
     STATUS_CANCELED = 'CANCELED'
 
-    def __init__(self, symbol: str, side: str, type: str, status: str, order_id: int, order_list_id: Optional[int],
-                 quantity: Decimal, price: Decimal, futures: bool = False, original_type: Optional[str] = None) -> None:
+    def __init__(self, symbol: str, side: str, order_type: str, status: str, order_id: int,
+                 order_list_id: Optional[int], quantity: Decimal, price: Decimal, futures: bool = False,
+                 original_type: Optional[str] = None) -> None:
         assert order_list_id != -1
         self.side: str = side
         self.symbol: str = symbol
-        self.type: str = type
+        self.type: str = order_type
         self.status: str = status
         self.order_id: int = order_id
         self.order_list_id: Optional[int] = order_list_id
@@ -46,4 +47,4 @@ class Order:
         order_list_id = values['orderListId'] if values.get('orderListId', -1) != -1 else None
 
         return Order(values['symbol'], values['side'], values['type'], values['status'], values['orderId'],
-                     order_list_id, quantity=quantity, price=price, futures=futures)
+                     order_list_id, quantity, price, futures)

@@ -51,14 +51,14 @@ class BombermanCoins:
     def process_api_spot_message(self, msg: dict) -> None:
         if msg['e'] == 'executionReport':
             order_list_id = msg['g'] if msg['g'] != -1 else None
-            order = Order(symbol=msg['s'], side=msg['S'], type=msg['o'], status=msg['X'], order_id=msg['i'],
+            order = Order(symbol=msg['s'], side=msg['S'], order_type=msg['o'], status=msg['X'], order_id=msg['i'],
                           order_list_id=order_list_id, quantity=parse_decimal(msg['l']), price=parse_decimal(msg['L']))
             self._process_api_order(order)
 
     def process_api_futures_message(self, message: dict) -> None:
         if message['data']['e'] == 'ORDER_TRADE_UPDATE':
             msg = message['data']['o']
-            order = Order(symbol=msg['s'], side=msg['S'], type=msg['o'], original_type=msg['ot'], status=msg['X'],
+            order = Order(symbol=msg['s'], side=msg['S'], order_type=msg['o'], original_type=msg['ot'], status=msg['X'],
                           order_id=msg['i'], order_list_id=None, quantity=parse_decimal(msg['l']),
                           price=parse_decimal(msg['L']), futures=True)
             self._process_api_order(order)

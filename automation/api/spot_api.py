@@ -131,10 +131,11 @@ class SpotApi(Api):
         assert sell_order.status == Order.STATUS_FILLED
         buy_order = self._get_last_buy_order(sell_order.symbol)
 
-        if buy_order is None or buy_order.quantity < sell_order.quantity:
+        # sell quantity can not be bigger than buy quantity
+        if buy_order is not None and sell_order.quantity <= buy_order.quantity:
+            return (sell_order.price - buy_order.price) * sell_order.quantity
+        else:
             return None
-
-        return (sell_order.price - buy_order.price) * sell_order.quantity
 
     def _get_last_buy_order(self, symbol: str) -> Optional[Order]:
         api_orders = self._client.get_all_orders(symbol=symbol)
@@ -144,8 +145,7 @@ class SpotApi(Api):
             if info['side'] == Order.SIDE_BUY and info['status'] == Order.STATUS_FILLED:
                 # price is zero in original response
                 price = parse_decimal(info['cummulativeQuoteQty']) / parse_decimal(info['executedQty'])
-                order = Order.from_dict(info, price=price, quantity_key='executedQty')
 
-                return order
+                return Order.from_dict(info, price=price, quantity_key='executedQty')
         else:
             return None

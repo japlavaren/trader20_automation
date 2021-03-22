@@ -14,7 +14,7 @@ class BuyMessage(Message):
         assert len(targets) != 0
 
         for target in targets:
-            assert target > stop_loss
+            assert target > stop_loss, f'Target {target} is smaller than stop loss {stop_loss}'
 
         self.buy_type: str = buy_type
         self.buy_price: Optional[Decimal] = buy_price

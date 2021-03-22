@@ -16,6 +16,8 @@ from automation.logger import Logger
 from automation.order_storage import OrderStorage
 from automation.parser.message_parser import UnknownMessage
 
+OFFICIAL_DISCORD_CHANNEL = 759070661888704613
+
 if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument('--config-file')
@@ -49,8 +51,10 @@ if __name__ == '__main__':
         content, parent_content = '', None
 
         try:
-            if test_user is not None and str(message.author) != test_user:
-                return
+            if discord_channel != OFFICIAL_DISCORD_CHANNEL:
+                if test_user is not None and str(message.author) != test_user:
+                    return
+
             if message.channel.id == discord_channel:
                 content = message.content
 
