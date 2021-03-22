@@ -38,7 +38,7 @@ class Api(ABC):
         pass
 
     @abstractmethod
-    def get_pnl(self, sell_order: Order) -> Optional[Decimal]:
+    def get_sell_order_pnl(self, sell_order: Order) -> Optional[Decimal]:
         pass
 
     def get_current_price(self, symbol: str) -> Decimal:
@@ -51,10 +51,11 @@ class Api(ABC):
         target_amounts, stop_loss_amount = self.get_buy_order_amounts(symbol, amount, buy_price, targets, stop_loss,
                                                                       futures)
         min_notional = self.get_symbol_info(symbol).min_notional
-        assert stop_loss_amount > min_notional, 'Trade amount is too small for stop loss'
 
         for target_amount in target_amounts:
             assert target_amount > min_notional, 'Trade amount is too small for target'
+
+        assert stop_loss_amount > min_notional, 'Trade amount is too small for stop loss'
 
     def get_buy_order_amounts(self, symbol: str, amount: Decimal, buy_price: Optional[Decimal], targets: List[Decimal],
                               stop_loss: Decimal, futures: bool) -> Tuple[List[Decimal], Decimal]:

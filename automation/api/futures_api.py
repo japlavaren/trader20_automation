@@ -21,7 +21,7 @@ class FuturesApi(Api):
         super().__init__(*args, **kwargs)
         self._margin_type: str = margin_type
         self._leverage: Optional[int] = None
-        self._symbol_infos: Dict[str, SymbolInfo] = {}
+        self.__symbol_infos: Dict[str, SymbolInfo] = {}
 
     @property
     def leverage(self) -> int:
@@ -34,9 +34,7 @@ class FuturesApi(Api):
     def leverage(self, leverage: int):
         self._leverage = leverage
 
-    def is_symbol_futures(self, symbol: str) -> bool:
-        self._load_symbol_infos()
-
+    def is_symbol_in_futures(self, symbol: str) -> bool:
         return symbol in self._symbol_infos.keys()
 
     def market_buy(self, symbol: str, amount: Decimal) -> Order:
@@ -56,7 +54,7 @@ class FuturesApi(Api):
             info = self._client.futures_get_order(symbol=info['symbol'], orderId=info['orderId'])
 
         order = Order.from_dict(info, quantity_key='executedQty', price_key='avgPrice', futures=True)
-        assert order.status == Order.STATUS_FILLED
+        assert order.status == Order.STATUS_FILLED, f'Got {order.status} status'
 
         return order
 
@@ -73,7 +71,7 @@ class FuturesApi(Api):
             timeInForce=Client.TIME_IN_FORCE_GTC,
         )
         order = Order.from_dict(info, quantity_key='origQty', futures=True)
-        assert order.status == Order.STATUS_NEW
+        assert order.status == Order.STATUS_NEW, f'Got {order.status} status'
 
         return order
 
@@ -91,7 +89,7 @@ class FuturesApi(Api):
             info = self._client.futures_get_order(symbol=info['symbol'], orderId=info['orderId'])
 
         order = Order.from_dict(info, quantity_key='executedQty', price_key='avgPrice', futures=True)
-        assert order.status == Order.STATUS_FILLED
+        assert order.status == Order.STATUS_FILLED, f'Got {order.status} status'
 
         return order
 
@@ -120,18 +118,15 @@ class FuturesApi(Api):
 
     def has_open_position(self, symbol: str) -> bool:
         open_positions = self._client.futures_position_information(symbol=symbol)
-        # there is always one position with zero values
         assert len(open_positions) == 1
         position_amount = parse_decimal(open_positions[0]['positionAmt'])
 
         return position_amount != Decimal(0)
 
     def get_symbol_info(self, symbol: str) -> SymbolInfo:
-        self._load_symbol_infos()
-
         return self._symbol_infos[symbol]
 
-    def get_pnl(self, sell_order: Order) -> Optional[Decimal]:
+    def get_sell_order_pnl(self, sell_order: Order) -> Optional[Decimal]:
         assert sell_order.side == Order.SIDE_SELL
         assert sell_order.status == Order.STATUS_FILLED
         trades = self._client.futures_account_trades(symbol=sell_order.symbol)
@@ -149,7 +144,7 @@ class FuturesApi(Api):
             closePosition=True,
             timeInForce='GTE_GTC',
         )
-        assert info['status'] == Order.STATUS_NEW
+        assert info['status'] == Order.STATUS_NEW, f'Got {info["status"]} status'
 
     def _limit_sell(self, symbol: str, quantity: Decimal, price: Decimal) -> None:
         info = self._client.futures_create_order(
@@ -161,9 +156,11 @@ class FuturesApi(Api):
             reduceOnly=True,
             timeInForce=Client.TIME_IN_FORCE_GTC,
         )
-        assert info['status'] == Order.STATUS_NEW
+        assert info['status'] == Order.STATUS_NEW, f'Got {info["status"]} status'
 
     def _set_futures_settings(self, symbol: str, leverage: int) -> None:
+        assert not self.has_open_position(symbol), 'Has open position'
+
         try:
             self._client.futures_change_margin_type(symbol=symbol, marginType=self._margin_type)
         except BinanceAPIException as e:
@@ -172,8 +169,9 @@ class FuturesApi(Api):
 
         self._client.futures_change_leverage(symbol=symbol, leverage=leverage)
 
-    def _load_symbol_infos(self) -> None:
-        if len(self._symbol_infos) == 0:
+    @property
+    def _symbol_infos(self) -> Dict[str, SymbolInfo]:
+        if len(self.__symbol_infos) == 0:
             all_info = self._client.futures_exchange_info()
 
             for info in all_info['symbols']:
@@ -183,3 +181,5 @@ class FuturesApi(Api):
                 self._symbol_infos[symbol] = SymbolInfo(int(info['quantityPrecision']),
                                                         int(info['pricePrecision']),
                                                         min_notional)
+
+        return self.__symbol_infos

@@ -28,7 +28,7 @@ class SpotApi(Api):
         # price is zero in original response
         price = parse_decimal(info['cummulativeQuoteQty']) / parse_decimal(info['executedQty'])
         order = Order.from_dict(info, price=price, quantity_key='executedQty')
-        assert order.status == Order.STATUS_FILLED
+        assert order.status == Order.STATUS_FILLED, f'Got {order.status}'
 
         return order
 
@@ -41,7 +41,7 @@ class SpotApi(Api):
             quantity=quantity,
         )
         order = Order.from_dict(info, quantity_key='origQty')
-        assert order.status == Order.STATUS_NEW
+        assert order.status == Order.STATUS_NEW, f'Got {order.status}'
 
         return order
 
@@ -58,7 +58,7 @@ class SpotApi(Api):
         # price is zero in original response
         price = parse_decimal(info['cummulativeQuoteQty']) / parse_decimal(info['executedQty'])
         order = Order.from_dict(info, price=price, quantity_key='executedQty')
-        assert order.status == Order.STATUS_FILLED
+        assert order.status == Order.STATUS_FILLED, f'Got {order.status}'
 
         return order
 
@@ -76,7 +76,7 @@ class SpotApi(Api):
                 stopLimitPrice=stop_loss,
                 stopLimitTimeInForce=Client.TIME_IN_FORCE_FOK,
             )
-            assert info['listStatusType'] == 'EXEC_STARTED'
+            assert info['listStatusType'] == 'EXEC_STARTED', f'Got {info["listStatusType"]}'
 
     def get_oco_sell_orders(self, symbol: str) -> List[Tuple[Order, Order]]:
         all_orders = [Order.from_dict(info, quantity_key='origQty')
@@ -95,15 +95,15 @@ class SpotApi(Api):
         for orders in grouped.values():
             if len(orders) == 2:
                 limit_maker, stop_loss_limit = orders
-                assert limit_maker.type == Order.TYPE_LIMIT_MAKER
-                assert stop_loss_limit.type == Order.TYPE_STOP_LOSS_LIMIT
+                assert limit_maker.type == Order.TYPE_LIMIT_MAKER, f'Got {limit_maker.type}'
+                assert stop_loss_limit.type == Order.TYPE_STOP_LOSS_LIMIT, f'Got {stop_loss_limit.type}'
                 oco_orders.append((limit_maker, stop_loss_limit))
 
         return oco_orders
 
     def cancel_order(self, symbol: str, order_id: int) -> None:
         info = self._client.cancel_order(symbol=symbol, orderId=order_id)
-        assert info['listStatusType'] == 'ALL_DONE'
+        assert info['listStatusType'] == 'ALL_DONE', f'Got {info["listStatusType"]}'
 
     def get_symbol_info(self, symbol: str) -> SymbolInfo:
         if symbol not in self._symbol_infos:
@@ -126,7 +126,7 @@ class SpotApi(Api):
 
         return self._symbol_infos[symbol]
 
-    def get_pnl(self, sell_order: Order) -> Optional[Decimal]:
+    def get_sell_order_pnl(self, sell_order: Order) -> Optional[Decimal]:
         assert sell_order.side == Order.SIDE_SELL
         assert sell_order.status == Order.STATUS_FILLED
         buy_order = self._get_last_buy_order(sell_order.symbol)

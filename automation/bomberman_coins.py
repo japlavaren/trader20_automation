@@ -168,7 +168,7 @@ class BombermanCoins:
         quantity = self._get_sell_quantity(symbol, futures)
         api = self._get_api(futures)
         sell_order = api.market_sell(symbol, quantity)
-        pnl = api.get_pnl(sell_order)
+        pnl = api.get_sell_order_pnl(sell_order)
 
         market_type = self._get_market_type(futures)
         symbol_info = api.get_symbol_info(symbol)
@@ -230,7 +230,7 @@ class BombermanCoins:
 
     def _process_api_filled_oco_sell_order(self, sell_order: Order) -> None:
         api = self._get_api(sell_order.futures)
-        pnl = api.get_pnl(sell_order)
+        pnl = api.get_sell_order_pnl(sell_order)
         market_type = self._get_market_type(sell_order.futures)
         typ = (sell_order.original_type or sell_order.type).replace('_', ' ').lower()
         symbol_info = api.get_symbol_info(sell_order.symbol)
@@ -260,7 +260,7 @@ class BombermanCoins:
         return amounts.get(currency, Decimal(0))
 
     def _is_futures(self, symbol: str) -> bool:
-        return self._market_type == self.MARKET_TYPE_FUTURES and self._futures_api.is_symbol_futures(symbol)
+        return self._market_type == self.MARKET_TYPE_FUTURES and self._futures_api.is_symbol_in_futures(symbol)
 
     def _get_api(self, futures: bool) -> Api:
         return self._futures_api if futures else self._spot_api
