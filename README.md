@@ -14,19 +14,19 @@
 ## Setup
 
 - You need to  python 3.8 and higher for this project. 
-- `virtualenv venv && source venv/bin/activate && pip install -r requirements.txt`
+- `pip3 install -r requirements.txt`
 - `cp config.yaml.example config.yaml` and fill in variables
 
 ## Run
 
-`python run_bomberman_coins.py`
+`python3 run_bomberman_coins.py`
 
 I strongly recommend running command within [supervisor](http://supervisord.org/running.html), which restarts command
 when error occurs. Example supervisor config `/etc/supervisor/conf.d/trader20_automation.conf`:
 
 ```
 [program:trader20_automation]
-command=/bin/bash -c 'cd /var/python/trader20_automation && source venv/bin/activate && python run_bomberman_coins.py'
+command=/bin/bash -c 'python3 /var/python/trader20_automation/run_bomberman_coins.py'
 autostart=true
 autorestart=true
 numprocs=1
