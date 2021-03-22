@@ -6,15 +6,22 @@ app:
       USDT: 100
       BTC: 0.002
 
+  futures:
+    trade_amount:
+      USDT: 100
+    leverage: SMART  # 1-125 / SMART
+    max_leverage: 10  # for SMART leverage
+    margin_type: ISOLATED  # ISOLATED / CROSS
+
 binance_api:
   key: BINANCE_API_KEY
   secret: BINANCE_API_SECRET
 
 discord:
-  channel: 759070661888704613  # official Trader2.0 channel
+  channel: 759070661888704613  # official Trader 2.0 channel
   #channel: 819957153476378634  # testing channel https://discord.gg/9rpkqBfArk
   token: DISCORD_TOKEN
-  test_user: null  # discord user
+  #test_user: name#123  # discord user
 
 email:
   recipient: YOUR_EMAIL

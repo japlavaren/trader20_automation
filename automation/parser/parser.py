@@ -24,7 +24,7 @@ class Parser(ABC):
     def _parse_symbol(normalized: str) -> str:
         symbols = re.findall(r'([\da-z]+/(?:usdt?|btc))', normalized)
         assert len(symbols) == 1, 'None or more than one symbol found'
-        symbol = symbols[0].upper()
+        symbol = symbols[0].replace('/', '').upper()
 
         # replace USD to USDT
         if 'USD' in symbol and 'USDT' not in symbol:
