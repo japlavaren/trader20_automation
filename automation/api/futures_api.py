@@ -34,11 +34,12 @@ class FuturesApi(Api):
     def leverage(self, leverage: int):
         self._leverage = leverage
 
-    def is_symbol_in_futures(self, symbol: str) -> bool:
+    def is_futures_symbol(self, symbol: str) -> bool:
         return symbol in self._symbol_infos.keys()
 
     def market_buy(self, symbol: str, amount: Decimal) -> Order:
-        self._set_buy_futures_settings(symbol, self.leverage)
+        self._check_is_empty(symbol)
+        self._set_futures_settings(symbol, self.leverage)
         symbol_info = self.get_symbol_info(symbol)
         price = self.get_current_price(symbol)
         quantity = self._round(amount / price, symbol_info.quantity_precision)
@@ -59,7 +60,8 @@ class FuturesApi(Api):
         return order
 
     def limit_buy(self, symbol: str, price: Decimal, amount: Decimal) -> Order:
-        self._set_buy_futures_settings(symbol, self.leverage)
+        self._check_is_empty(symbol)
+        self._set_futures_settings(symbol, self.leverage)
         symbol_info = self.get_symbol_info(symbol)
         quantity = self._round(amount / price, symbol_info.quantity_precision)
         info = self._client.futures_create_order(
@@ -107,22 +109,6 @@ class FuturesApi(Api):
 
         return parse_decimal(info[0]['positionAmt'])
 
-    def get_available_balance(self, currency: str) -> Decimal:
-        # client futures_account_balance() is pointing to v1 and we need v2 call
-        uri = self._client._create_futures_api_uri('balance').replace('v1', 'v2')
-        info = self._client._request('get', uri, signed=True, data={})
-        balances = [parse_decimal(balance['availableBalance']) for balance in info if balance['asset'] == currency]
-        assert len(balances) == 1
-
-        return balances[0]
-
-    def has_open_position(self, symbol: str) -> bool:
-        open_positions = self._client.futures_position_information(symbol=symbol)
-        assert len(open_positions) == 1
-        position_amount = parse_decimal(open_positions[0]['positionAmt'])
-
-        return position_amount != Decimal(0)
-
     def get_symbol_info(self, symbol: str) -> SymbolInfo:
         return self._symbol_infos[symbol]
 
@@ -158,9 +144,13 @@ class FuturesApi(Api):
         )
         assert info['status'] == Order.STATUS_NEW, f'Got {info["status"]} status'
 
-    def _set_buy_futures_settings(self, symbol: str, leverage: int) -> None:
-        assert not self.has_open_position(symbol), 'Has open position'
+    def _check_is_empty(self, symbol: str) -> None:
+        positions = self._client.futures_position_information(symbol=symbol)
+        assert len(positions) == 1
+        assert parse_decimal(positions[0]['positionAmt']) == Decimal(0), f'{symbol} has open future position'
+        assert len(self._client.futures_get_open_orders(symbol=symbol)) == 0, f'{symbol} has open future order'
 
+    def _set_futures_settings(self, symbol: str, leverage: int) -> None:
         try:
             self._client.futures_change_margin_type(symbol=symbol, marginType=self._margin_type)
         except BinanceAPIException as e:
@@ -178,8 +168,8 @@ class FuturesApi(Api):
                 symbol = info['symbol']
                 min_notional = [parse_decimal(f['notional']) for f in info['filters']
                                 if f['filterType'] == 'MIN_NOTIONAL'][0]
-                self._symbol_infos[symbol] = SymbolInfo(int(info['quantityPrecision']),
-                                                        int(info['pricePrecision']),
-                                                        min_notional)
+                self.__symbol_infos[symbol] = SymbolInfo(int(info['quantityPrecision']),
+                                                         int(info['pricePrecision']),
+                                                         min_notional)
 
         return self.__symbol_infos

@@ -65,7 +65,7 @@ class BombermanCoins:
 
     def _process_channel_buy(self, message: BuyMessage) -> None:
         symbol = message.symbol
-        futures = self._is_buy_order_futures(symbol)
+        futures = self._is_futures_symbol(symbol)
         amount = self._get_trade_amount(symbol, futures)
 
         if amount == Decimal(0):
@@ -101,18 +101,6 @@ class BombermanCoins:
             ])
         else:
             raise Exception(f'Unknown buy order status {buy_order.status}')
-
-    def _is_buy_order_futures(self, symbol: str) -> bool:
-        if not self._is_futures(symbol):
-            return False
-
-        futures_amount = self._get_trade_amount(symbol, futures=True)
-        currency = self._get_currency(symbol)
-
-        if futures_amount == Decimal(0) or futures_amount > self._futures_api.get_available_balance(currency):
-            return False
-
-        return not self._futures_api.has_open_position(symbol)
 
     def _create_buy_order(self, buy_type: str, symbol: str, amount: Decimal, buy_price: Optional[Decimal],
                           targets: List[Decimal], stop_loss: Decimal, futures: bool) -> Order:
@@ -164,7 +152,7 @@ class BombermanCoins:
     def _process_channel_sell(self, message: SellMessage) -> None:
         assert message.sell_type == SellMessage.SELL_MARKET
         symbol = message.symbol
-        futures = not self._is_futures(symbol) and self._futures_api.has_open_position(symbol)
+        futures = self._is_futures_symbol(symbol)
         quantity = self._get_sell_quantity(symbol, futures)
         api = self._get_api(futures)
         sell_order = api.market_sell(symbol, quantity)
@@ -259,8 +247,9 @@ class BombermanCoins:
 
         return amounts.get(currency, Decimal(0))
 
-    def _is_futures(self, symbol: str) -> bool:
-        return self._market_type == self.MARKET_TYPE_FUTURES and self._futures_api.is_symbol_in_futures(symbol)
+    def _is_futures_symbol(self, symbol: str) -> bool:
+        return (self._market_type == self.MARKET_TYPE_FUTURES and self._futures_api.is_futures_symbol(symbol)
+                and self._get_trade_amount(symbol, futures=True) != Decimal(0))
 
     def _get_api(self, futures: bool) -> Api:
         return self._futures_api if futures else self._spot_api
