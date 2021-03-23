@@ -37,6 +37,7 @@ class BombermanCoins:
         self._futures_api: FuturesApi = futures_api
         self._order_storage: OrderStorage = order_storage
         self._logger: Logger = logger
+        print("BombermanCoin stalker was successfully initialized")
 
     def process_channel_message(self, content: str, parent_content: Optional[str]) -> None:
         message = MessageParser.parse(content, parent_content)
