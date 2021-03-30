@@ -15,7 +15,7 @@ def load_config(file_name: str = None) -> Dict[str, Any]:
 
     def to_decimal(values: Dict) -> None:
         for key, value in values.items():
-            values[key] = Decimal(value)
+            values[key] = Decimal(str(value))
 
     to_decimal(config['app']['spot']['trade_amount'])
     to_decimal(config['app']['futures']['trade_amount'])

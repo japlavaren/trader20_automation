@@ -1,3 +1,5 @@
+import math
+import re
 from decimal import Decimal
 from typing import Dict, List, Optional, Union
 
@@ -76,10 +78,13 @@ class BombermanCoins:
             )
             return
 
-        buy_order = self._create_buy_order(message.buy_type, symbol, amount, message.buy_price, message.targets,
+        api = self._get_api(futures)
+        current_price = api.get_current_price(symbol)
+        self._fix_small_prices(message, current_price)
+        buy_price = message.buy_price if message.buy_price is not None else current_price
+        buy_order = self._create_buy_order(message.buy_type, symbol, amount, buy_price, message.targets,
                                            message.stop_loss, futures)
         market_type = self._get_market_type(futures)
-        api = self._get_api(futures)
         symbol_info = api.get_symbol_info(symbol)
 
         if buy_order.status == Order.STATUS_NEW:
@@ -102,8 +107,27 @@ class BombermanCoins:
         else:
             raise Exception(f'Unknown buy order status {buy_order.status}')
 
-    def _create_buy_order(self, buy_type: str, symbol: str, amount: Decimal, buy_price: Optional[Decimal],
-                          targets: List[Decimal], stop_loss: Decimal, futures: bool) -> Order:
+    @staticmethod
+    def _fix_small_prices(message: BuyMessage, current_price: Decimal) -> None:
+        diff = abs(current_price - message.stop_loss) / current_price
+
+        if diff > Decimal(0.5):  # difference 50%
+            digits = int(math.log10(message.stop_loss)) + 1
+            m = re.search(r'0\.(0*)', str(current_price))
+            assert m is not None
+            zeros = len(m.group(1))
+            exp = pow(10, digits + zeros)
+
+            if message.buy_price is not None:
+                message.buy_price /= exp
+
+            for i in range(len(message.targets)):
+                message.targets[i] /= exp
+
+            message.stop_loss /= exp
+
+    def _create_buy_order(self, buy_type: str, symbol: str, amount: Decimal, buy_price: Decimal, targets: List[Decimal],
+                          stop_loss: Decimal, futures: bool) -> Order:
         if futures:
             self._futures_api.leverage = self._get_futures_leverage(symbol, amount, buy_price, targets, stop_loss)
 
@@ -118,15 +142,12 @@ class BombermanCoins:
         else:
             raise UnknownMessage()
 
-    def _get_futures_leverage(self, symbol: str, amount: Decimal, buy_price: Optional[Decimal], targets: List[Decimal],
+    def _get_futures_leverage(self, symbol: str, amount: Decimal, buy_price: Decimal, targets: List[Decimal],
                               stop_loss: Decimal) -> int:
         if self._futures_leverage != self.LEVERAGE_SMART:
             assert isinstance(self._futures_leverage, int)
 
             return self._futures_leverage
-
-        if buy_price is None:
-            buy_price = self._futures_api.get_current_price(symbol)
 
         # calculate leverage based on stop loss
         leverage = min(int(buy_price / (buy_price - stop_loss)),
