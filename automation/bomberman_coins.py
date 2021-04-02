@@ -182,7 +182,8 @@ class BombermanCoins:
         market_type = self._get_market_type(futures)
         symbol_info = api.get_symbol_info(symbol)
         currency = self._get_currency(symbol)
-        self._logger.log_message(symbol, '', [
+        log_content = Logger.join_contents(message.content, message.parent_content)
+        self._logger.log_message(symbol, log_content, [
             f'{market_type} market sold {symbol}',
             f'price: {round(sell_order.price, symbol_info.price_precision)}',
             'PNL: ' + f'{round(pnl, symbol_info.price_precision)} {currency}' if pnl else 'unknown',
