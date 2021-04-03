@@ -22,3 +22,7 @@ email:
   host: EMAIL_HOST
   user: EMAIL_USER
   password: EMAIL_PASSWORD
+
+rabbit:
+  url: amqp://guest:guest@localhost:5672/%2F
+  exchange: t20a

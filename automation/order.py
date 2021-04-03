@@ -4,7 +4,7 @@ from typing import Any, Dict, Optional
 from binance.client import Client
 
 from automation.functions import parse_decimal
-from automation.parser.buy_message_parser import BuyMessage
+from automation.message.buy_message import BuyMessage
 
 
 class Order:

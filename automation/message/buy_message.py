@@ -9,9 +9,9 @@ class BuyMessage(Message):
     BUY_MARKET = 'market'
     BUY_LIMIT = 'limit'
 
-    def __init__(self, content: str, parent_content: Optional[str], symbol: str, buy_type: str,
+    def __init__(self, channel: str, content: str, parent_content: Optional[str], symbol: str, buy_type: str,
                  buy_price: Optional[Decimal], targets: List[Decimal], stop_loss: Decimal) -> None:
-        super().__init__(self.TYPE, content, parent_content)
+        super().__init__(channel, self.TYPE, content, parent_content)
         assert len(targets) != 0
 
         for target in targets:
@@ -26,6 +26,7 @@ class BuyMessage(Message):
     @staticmethod
     def from_dict(values: dict) -> 'BuyMessage':
         return BuyMessage(
+            values['channel'],
             values['content'],
             values['parentContent'],
             values['symbol'],

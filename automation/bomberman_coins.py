@@ -1,3 +1,4 @@
+import json
 import math
 import re
 from decimal import Decimal
@@ -40,7 +41,14 @@ class BombermanCoins:
         self._order_storage: OrderStorage = order_storage
         self._logger: Logger = logger
 
-    def process_channel_message(self, message: Message) -> None:
+    def process_channel_message(self, body: bytes) -> None:
+        message = self._parse_message(body)
+
+        if message.channel == Message.CHANNEL_MIDTERM:
+            self._logger.log('MIDTERM', Logger.join_contents(message.content, message.parent_content))
+            return
+
+        assert message.channel == Message.CHANNEL_COIN
 
         if isinstance(message, BuyMessage):
             return self._process_channel_buy(message)
@@ -288,3 +296,15 @@ class BombermanCoins:
                 return currency
         else:
             raise Exception(f'Unknown currency for {symbol}')
+
+    @staticmethod
+    def _parse_message(body: bytes) -> Message:
+        values = json.loads(body)
+        typ = values.pop('type')
+        objects = {
+            BuyMessage.TYPE: BuyMessage,
+            SellMessage.TYPE: SellMessage,
+            UnknownMessage.TYPE: UnknownMessage,
+        }
+
+        return objects[typ].from_dict(values)  # type: ignore

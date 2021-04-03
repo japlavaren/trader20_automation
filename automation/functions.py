@@ -5,10 +5,9 @@ from typing import Any, Dict
 import yaml
 
 
-def load_config(file_name: str = None) -> Dict[str, Any]:
-    file_name = file_name if file_name is not None else 'config.yaml'
+def load_config() -> Dict[str, Any]:
     current_dir = os.path.dirname(os.path.realpath(__file__))
-    config_file = os.path.join(current_dir, '../', file_name)
+    config_file = os.path.join(current_dir, '../config.yaml')
 
     with open(config_file) as h:
         config = yaml.safe_load(h)

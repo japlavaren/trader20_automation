@@ -3,7 +3,11 @@ from typing import Optional
 
 
 class Message(ABC):
-    def __init__(self, typ: str, content: str, parent_content: Optional[str]) -> None:
+    CHANNEL_COIN = 'coin'
+    CHANNEL_MIDTERM = 'midterm'
+
+    def __init__(self, channel: str, typ: str, content: str, parent_content: Optional[str]) -> None:
+        self.channel: str = channel
         self.type: str = typ
         self.content: str = content
         self.parent_content: Optional[str] = parent_content
