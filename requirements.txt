@@ -1,6 +1,4 @@
-discord.py
 mypy
 python-binance
 pyyaml
-Twisted
 Unidecode

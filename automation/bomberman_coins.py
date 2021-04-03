@@ -1,7 +1,7 @@
 import math
 import re
 from decimal import Decimal
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Union
 
 from automation.api.api import Api
 from automation.api.futures_api import FuturesApi
@@ -9,11 +9,11 @@ from automation.api.spot_api import SpotApi
 from automation.functions import parse_decimal
 from automation.logger import Logger
 from automation.message.buy_message import BuyMessage
+from automation.message.message import Message
 from automation.message.sell_message import SellMessage
 from automation.message.unknown_message import UnknownMessage
 from automation.order import Order
 from automation.order_storage import OrderStorage
-from automation.parser.message_parser import MessageParser
 
 
 class BombermanCoins:
@@ -40,15 +40,16 @@ class BombermanCoins:
         self._order_storage: OrderStorage = order_storage
         self._logger: Logger = logger
 
-    def process_channel_message(self, content: str, parent_content: Optional[str]) -> None:
-        message = MessageParser.parse(content, parent_content)
+    def process_channel_message(self, message: Message) -> None:
 
         if isinstance(message, BuyMessage):
             return self._process_channel_buy(message)
         elif isinstance(message, SellMessage):
             return self._process_channel_sell(message)
-
-        raise UnknownMessage()
+        elif isinstance(message, UnknownMessage):
+            self._logger.log('UNKNOWN MESSAGE', Logger.join_contents(message.content, message.parent_content))
+        else:
+            raise Exception(f'Unknown message type {type(message)}')
 
     def process_api_spot_message(self, msg: dict) -> None:
         if msg['e'] == 'executionReport':
@@ -140,7 +141,7 @@ class BombermanCoins:
             assert buy_price is not None
             return api.limit_buy(symbol, buy_price, amount)
         else:
-            raise UnknownMessage()
+            raise Exception(f'Unknown buy type {buy_type}')
 
     def _get_futures_leverage(self, symbol: str, amount: Decimal, buy_price: Decimal, targets: List[Decimal],
                               stop_loss: Decimal) -> int:
