@@ -2,4 +2,5 @@ mypy
 pika
 python-binance
 pyyaml
+Twisted
 Unidecode

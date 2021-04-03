@@ -1,9 +1,8 @@
 import traceback
-from time import sleep
 
 from binance.client import Client as BinanceClient
 from binance.websockets import BinanceSocketManager
-from pika.adapters.blocking_connection import BlockingConnection
+from pika.adapters.blocking_connection import BlockingChannel, BlockingConnection
 from pika.connection import URLParameters
 
 from automation.api.futures_api import FuturesApi
@@ -20,7 +19,7 @@ class BombermanCoinsRunner:
         self._logger: Logger = self._create_logger()
         self._binance_client: BinanceClient = self._create_binance_client()
         self._bomberman_coins: BombermanCoins = self._create_bomberman_coins()
-        self._rabbit: BlockingConnection = self._create_rabbit()
+        self._channel: BlockingChannel = self._create_rabbit()
         self._binance_socket: BinanceSocketManager = self._create_binance_socket()
 
     def _create_logger(self) -> Logger:
@@ -46,7 +45,7 @@ class BombermanCoinsRunner:
                               self._config['app']['futures']['max_leverage'],
                               spot_api, futures_api, order_storage, self._logger)
 
-    def _create_rabbit(self) -> BlockingConnection:
+    def _create_rabbit(self) -> BlockingChannel:
         exchange = self._config['rabbit']['exchange']
         queue = 't20a_' + self._config['email']['recipient']
 
@@ -57,9 +56,8 @@ class BombermanCoinsRunner:
         channel.queue_bind(queue, exchange)
 
         channel.basic_consume(queue, self._rabbit_callback, auto_ack=True)
-        channel.start_consuming()
 
-        return connection
+        return channel
 
     def _rabbit_callback(self, ch, method, properties, body: bytes):
         try:
@@ -78,8 +76,6 @@ class BombermanCoinsRunner:
                 self._binance_futures_callback,
             )
 
-        binance_socket.start()
-
         return binance_socket
 
     def _binance_spot_callback(self, msg: dict) -> None:
@@ -95,12 +91,12 @@ class BombermanCoinsRunner:
             self._logger.log('ERROR', traceback.format_exc())
 
     def run(self) -> None:
-        while True:
-            try:
-                sleep(60)
-            finally:
-                self._rabbit.close()
-                self._binance_socket.close()
+        try:
+            self._binance_socket.start()
+            self._channel.start_consuming()  # thread blocking - keep last
+        except Exception:
+            self._logger.log('TERMINATED', traceback.format_exc())
+            exit(1)
 
 
 if __name__ == '__main__':
