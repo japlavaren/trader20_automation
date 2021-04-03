@@ -25,4 +25,4 @@ email:
 
 rabbit:
   url: amqp://guest:guest@localhost:5672/%2F
-  exchange: t20a
+  exchange: trader20
