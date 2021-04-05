@@ -62,14 +62,13 @@ class FuturesApi(Api):
     def limit_buy(self, symbol: str, price: Decimal, amount: Decimal) -> Order:
         self._check_is_empty(symbol)
         self._set_futures_settings(symbol, self.leverage)
-        symbol_info = self.get_symbol_info(symbol)
-        quantity = self._round(amount / price, symbol_info.quantity_precision)
+        buy_price, buy_quantity = self._get_limit_buy_price_and_quantity(symbol, price, amount)
         info = self._client.futures_create_order(
             side=Order.SIDE_BUY,
             type=Order.TYPE_LIMIT,
             symbol=symbol,
-            price=price,
-            quantity=quantity,
+            price=buy_price,
+            quantity=buy_quantity,
             timeInForce=Client.TIME_IN_FORCE_GTC,
         )
         order = Order.from_dict(info, quantity_key='origQty', futures=True)
@@ -96,9 +95,8 @@ class FuturesApi(Api):
         return order
 
     def oco_sell(self, symbol: str, quantity: Decimal, targets: List[Decimal], stop_loss: Decimal) -> None:
-        symbol_info = self.get_symbol_info(symbol)
         self._stop_market_sell(symbol, stop_loss)
-        quantities = self._get_target_quantities(quantity, len(targets), symbol_info.quantity_precision)
+        quantities = self._get_target_quantities(symbol, quantity, len(targets))
 
         for price, quantity in zip(targets, quantities):
             self._limit_sell(symbol, quantity, price)
@@ -122,11 +120,12 @@ class FuturesApi(Api):
         return pln[0] if len(pln) != 0 else None
 
     def _stop_market_sell(self, symbol: str, stop_loss: Decimal) -> None:
+        _, stop_loss_price = self._get_stop_loss_prices(symbol, stop_loss)
         info = self._client.futures_create_order(
             side=Order.SIDE_SELL,
             type=Order.TYPE_STOP_MARKET,
             symbol=symbol,
-            stopPrice=stop_loss,
+            stopPrice=stop_loss_price,
             closePosition=True,
             timeInForce='GTE_GTC',
         )

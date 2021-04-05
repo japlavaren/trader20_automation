@@ -12,7 +12,9 @@ SymbolInfo = namedtuple('SymbolInfo', 'quantity_precision, price_precision, min_
 
 
 class Api(ABC):
-    _STOP_PRICE_CORRECTION = Decimal(0.5) / 100  # 0.5%
+    _LIMIT_PRICE_CORRECTION = Decimal(0.1) / 100  # 0.1 %
+    _STOP_LOSS_PRICE_CORRECTION = Decimal(0.1) / 100  # 0.1%
+    _STOP_PRICE_DIFFERENCE = Decimal(0.5) / 100  # 0.5%
 
     def __init__(self, client: Client) -> None:
         self._client: Client = client
@@ -61,7 +63,7 @@ class Api(ABC):
                               stop_loss: Decimal, futures: bool) -> Tuple[List[Decimal], Decimal]:
         symbol_info = self.get_symbol_info(symbol)
         total_quantity = self._round(amount / buy_price, symbol_info.quantity_precision)
-        target_quantities = self._get_target_quantities(total_quantity, len(targets), symbol_info.quantity_precision)
+        target_quantities = self._get_target_quantities(symbol, total_quantity, len(targets))
         target_amounts = [self._round(target * quantity, symbol_info.price_precision)
                           for target, quantity in zip(targets, target_quantities)]
 
@@ -75,11 +77,25 @@ class Api(ABC):
 
         return target_amounts, stop_loss_amount
 
-    @classmethod
-    def _get_target_quantities(cls, total_quantity: Decimal, targets_count: int, quantity_precision: int,
-                               ) -> List[Decimal]:
+    def _get_limit_buy_price_and_quantity(self, symbol: str, buy_price: Decimal, amount: Decimal,
+                                          ) -> Tuple[Decimal, Decimal]:
+        symbol_info = self.get_symbol_info(symbol)
+        buy_price = self._round(buy_price * (1 + self._LIMIT_PRICE_CORRECTION), symbol_info.price_precision)
+        buy_quantity = self._round(amount / buy_price, symbol_info.quantity_precision)
+
+        return buy_price, buy_quantity
+
+    def _get_stop_loss_prices(self, symbol: str, stop_loss: Decimal) -> Tuple[Decimal, Decimal]:
+        symbol_info = self.get_symbol_info(symbol)
+        stop_loss_price = self._round(stop_loss / (1 + self._STOP_LOSS_PRICE_CORRECTION), symbol_info.price_precision)
+        stop_price = self._round(stop_loss_price * (1 + self._STOP_PRICE_DIFFERENCE), symbol_info.price_precision)
+
+        return stop_price, stop_loss_price
+
+    def _get_target_quantities(self, symbol: str, total_quantity: Decimal, targets_count: int) -> List[Decimal]:
         assert targets_count != 0
-        trade_quantity = cls._round(total_quantity / targets_count, quantity_precision)
+        symbol_info = self.get_symbol_info(symbol)
+        trade_quantity = self._round(total_quantity / targets_count, symbol_info.quantity_precision)
         quantities = [trade_quantity for _ in range(targets_count)]
         quantities[-1] = total_quantity - sum(quantities[:-1])
 

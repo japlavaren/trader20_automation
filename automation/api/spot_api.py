@@ -33,12 +33,11 @@ class SpotApi(Api):
         return order
 
     def limit_buy(self, symbol: str, price: Decimal, amount: Decimal) -> Order:
-        symbol_info = self.get_symbol_info(symbol)
-        quantity = self._round(amount / price, symbol_info.quantity_precision)
+        buy_price, buy_quantity = self._get_limit_buy_price_and_quantity(symbol, price, amount)
         info = self._client.order_limit_buy(
             symbol=symbol,
-            price=price,
-            quantity=quantity,
+            price=buy_price,
+            quantity=buy_quantity,
         )
         order = Order.from_dict(info, quantity_key='origQty')
         assert order.status == Order.STATUS_NEW, f'Got {order.status}'
@@ -63,9 +62,8 @@ class SpotApi(Api):
         return order
 
     def oco_sell(self, symbol: str, quantity: Decimal, targets: List[Decimal], stop_loss: Decimal) -> None:
-        symbol_info = self.get_symbol_info(symbol)
-        stop_price = self._round(stop_loss * (1 + self._STOP_PRICE_CORRECTION), symbol_info.price_precision)
-        quantities = self._get_target_quantities(quantity, len(targets), symbol_info.quantity_precision)
+        quantities = self._get_target_quantities(symbol, quantity, len(targets))
+        stop_price, stop_loss_price = self._get_stop_loss_prices(symbol, stop_loss)
 
         for price, quantity in zip(targets, quantities):
             info = self._client.order_oco_sell(
@@ -73,7 +71,7 @@ class SpotApi(Api):
                 quantity=quantity,
                 price=price,
                 stopPrice=stop_price,
-                stopLimitPrice=stop_loss,
+                stopLimitPrice=stop_loss_price,
                 stopLimitTimeInForce=Client.TIME_IN_FORCE_FOK,
             )
             assert info['listStatusType'] == 'EXEC_STARTED', f'Got {info["listStatusType"]}'
