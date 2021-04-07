@@ -35,14 +35,14 @@ class BombermanCoinsRunner:
 
     def _create_bomberman_coins(self) -> BombermanCoins:
         spot_api = SpotApi(self._binance_client)
-        futures_api = FuturesApi(self._config['app']['futures']['margin_type'], self._binance_client)
+        futures_api = FuturesApi(self._config['app']['futures']['margin_type'],
+                                 self._config['app']['futures']['leverage'],
+                                 self._binance_client)
         order_storage = OrderStorage('data/orders.pickle')
 
         return BombermanCoins(self._config['app']['market_type'],
                               self._config['app']['spot']['trade_amount'],
                               self._config['app']['futures']['trade_amount'],
-                              self._config['app']['futures']['leverage'],
-                              self._config['app']['futures']['max_leverage'],
                               spot_api, futures_api, order_storage, self._logger)
 
     def _create_rabbit(self) -> BlockingChannel:

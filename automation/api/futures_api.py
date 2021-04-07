@@ -16,30 +16,19 @@ class FuturesApi(Api):
 
     _NO_NEED_TO_CHANGE_MARGIN = -4046
 
-    def __init__(self, margin_type: str, *args, **kwargs) -> None:
+    def __init__(self, margin_type: str, leverage: int, *args, **kwargs) -> None:
         assert margin_type in (self.MARGIN_TYPE_ISOLATED, self.MARGIN_TYPE_CROSS)
         super().__init__(*args, **kwargs)
         self._margin_type: str = margin_type
-        self._leverage: Optional[int] = None
+        self._leverage: int = leverage
         self.__symbol_infos: Dict[str, SymbolInfo] = {}
-
-    @property
-    def leverage(self) -> int:
-        assert self._leverage is not None
-        leverage, self._leverage = self._leverage, None  # reset after use
-
-        return leverage
-
-    @leverage.setter
-    def leverage(self, leverage: int):
-        self._leverage = leverage
 
     def is_futures_symbol(self, symbol: str) -> bool:
         return symbol in self._symbol_infos.keys()
 
     def market_buy(self, symbol: str, amount: Decimal) -> Order:
         self._check_is_empty(symbol)
-        self._set_futures_settings(symbol, self.leverage)
+        self._set_futures_settings(symbol)
         symbol_info = self.get_symbol_info(symbol)
         price = self.get_current_price(symbol)
         quantity = self._round(amount / price, symbol_info.quantity_precision)
@@ -61,7 +50,7 @@ class FuturesApi(Api):
 
     def limit_buy(self, symbol: str, price: Decimal, amount: Decimal) -> Order:
         self._check_is_empty(symbol)
-        self._set_futures_settings(symbol, self.leverage)
+        self._set_futures_settings(symbol)
         buy_price, buy_quantity = self._get_limit_buy_price_and_quantity(symbol, price, amount)
         info = self._client.futures_create_order(
             side=Order.SIDE_BUY,
@@ -149,14 +138,14 @@ class FuturesApi(Api):
         assert parse_decimal(positions[0]['positionAmt']) == Decimal(0), f'{symbol} has open future position'
         assert len(self._client.futures_get_open_orders(symbol=symbol)) == 0, f'{symbol} has open future order'
 
-    def _set_futures_settings(self, symbol: str, leverage: int) -> None:
+    def _set_futures_settings(self, symbol: str) -> None:
         try:
             self._client.futures_change_margin_type(symbol=symbol, marginType=self._margin_type)
         except BinanceAPIException as e:
             if e.code != self._NO_NEED_TO_CHANGE_MARGIN:
                 raise
 
-        self._client.futures_change_leverage(symbol=symbol, leverage=leverage)
+        self._client.futures_change_leverage(symbol=symbol, leverage=self._leverage)
 
     @property
     def _symbol_infos(self) -> Dict[str, SymbolInfo]:

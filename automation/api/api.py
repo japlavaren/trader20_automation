@@ -50,8 +50,8 @@ class Api(ABC):
 
     def check_min_notional(self, symbol: str, buy_price: Decimal, amount: Decimal,
                            targets: List[Decimal], stop_loss: Decimal, futures: bool) -> None:
-        target_amounts, stop_loss_amount = self.get_buy_order_amounts(symbol, amount, buy_price, targets, stop_loss,
-                                                                      futures)
+        target_amounts, stop_loss_amount = self._get_buy_order_amounts(symbol, amount, buy_price, targets, stop_loss,
+                                                                       futures)
         min_notional = self.get_symbol_info(symbol).min_notional
 
         for target_amount in target_amounts:
@@ -59,8 +59,8 @@ class Api(ABC):
 
         assert stop_loss_amount > min_notional, 'Trade amount is too small for stop loss'
 
-    def get_buy_order_amounts(self, symbol: str, amount: Decimal, buy_price: Decimal, targets: List[Decimal],
-                              stop_loss: Decimal, futures: bool) -> Tuple[List[Decimal], Decimal]:
+    def _get_buy_order_amounts(self, symbol: str, amount: Decimal, buy_price: Decimal, targets: List[Decimal],
+                               stop_loss: Decimal, futures: bool) -> Tuple[List[Decimal], Decimal]:
         symbol_info = self.get_symbol_info(symbol)
         total_quantity = self._round(amount / buy_price, symbol_info.quantity_precision)
         target_quantities = self._get_target_quantities(symbol, total_quantity, len(targets))

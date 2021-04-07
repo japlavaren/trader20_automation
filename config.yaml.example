@@ -9,8 +9,7 @@ app:
   futures:
     trade_amount:
       USDT: 100
-    leverage: SMART  # 1-125 / SMART
-    max_leverage: 10  # for SMART leverage
+    leverage: 1
     margin_type: ISOLATED  # ISOLATED / CROSS
 
 binance_api:
