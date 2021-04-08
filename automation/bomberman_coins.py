@@ -38,8 +38,8 @@ class BombermanCoins:
     def process_channel_message(self, body: bytes) -> None:
         message = self._parse_message(body)
 
-        if message.channel == Message.CHANNEL_MIDTERM:
-            self._logger.log('MIDTERM', Logger.join_contents(message.content, message.parent_content))
+        if message.channel in (Message.CHANNEL_MIDTERM, Message.CHANNEL_OTHER):
+            self._logger.log(message.channel.upper(), Logger.join_contents(message.content, message.parent_content))
             return
 
         assert message.channel == Message.CHANNEL_COIN

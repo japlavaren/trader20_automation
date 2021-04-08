@@ -5,6 +5,7 @@ from typing import Optional
 class Message(ABC):
     CHANNEL_COIN = 'coin'
     CHANNEL_MIDTERM = 'midterm'
+    CHANNEL_OTHER = 'other'
 
     def __init__(self, channel: str, typ: str, content: str, parent_content: Optional[str]) -> None:
         self.channel: str = channel
